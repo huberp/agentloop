@@ -1,13 +1,13 @@
 # AgentLoop
 
-A **TypeScript LangChain Agent Loop** using the Mistral LLM API, designed for interactive conversations with tool support. This project is built for direct execution with `ts-node`, so no explicit build step is required.
+A **TypeScript LangChain Agent Loop** using the Mistral LLM API, designed for interactive conversations with tool support. This project is built for direct execution with `tsx`, so no explicit build step is required.
 
 ## Features
 - **Mistral LLM Integration**: Uses the Mistral API for natural language understanding and generation.
 - **Tool Support**: Extensible tools with native `bindTools` flow and tool-result round trips.
 - **Memory**: Maintains conversation history for context-aware interactions.
 - **Structured Logging**: Uses Pino and logs tool calls, arguments, and tool responses.
-- **Direct TypeScript Execution**: Runs with `ts-node`—no compilation needed.
+- **Direct TypeScript Execution**: Runs with `tsx`—no compilation needed.
 
 ## Prerequisites
 - Node.js (v20 or later)
@@ -37,9 +37,9 @@ A **TypeScript LangChain Agent Loop** using the Mistral LLM API, designed for in
    ```
 
 ## Usage
-Run the agent directly with `ts-node`:
+Run the agent directly with `tsx`:
 ```bash
-npx ts-node src/index.ts
+npx tsx src/index.ts
 ```
 
 ### Example Interaction
