@@ -1,29 +1,30 @@
-# AgentLoop: TypeScript LangChain Agent with Mistral LLM
+# AgentLoop
 
-A simple, extensible agent loop using LangChain, Mistral LLM, and custom tools. Designed for quick prototyping and integration into larger projects.
+A **TypeScript LangChain Agent Loop** using the Mistral LLM API, designed for interactive conversations with tool support. This project is built for direct execution with `ts-node`, so no explicit build step is required.
 
 ## Features
-- **Mistral LLM Integration**: Uses Mistral's API for natural language understanding and generation.
-- **Tool Support**: Easily add custom tools (e.g., web search, calculations).
+- **Mistral LLM Integration**: Uses the Mistral API for natural language understanding and generation.
+- **Tool Support**: Extensible with custom tools (e.g., web search, calculations).
 - **Memory**: Maintains conversation history for context-aware interactions.
-- **TypeScript**: Written in TypeScript for type safety and modern JavaScript features.
-- **No Build Step**: Run directly with `ts-node` for rapid development.
+- **Direct TypeScript Execution**: Runs with `ts-node`—no compilation needed.
 
 ## Prerequisites
 - Node.js (v20 or later)
 - npm or yarn
 - Mistral API key (sign up at [mistral.ai](https://mistral.ai/))
 
-## Installation
+## Setup
 1. Clone the repository:
    ```bash
    git clone https://github.com/huberp/agentloop.git
    cd agentloop
    ```
+
 2. Install dependencies:
    ```bash
    npm install
    ```
+
 3. Create a `.env` file in the project root and add your Mistral API key:
    ```env
    MISTRAL_API_KEY=your_mistral_api_key_here
@@ -39,44 +40,36 @@ npx ts-node src/index.ts
 ```plaintext
 User: What is the capital of France?
 Agent: The capital of France is Paris.
-User: Calculate 2+2
-Agent: Result of 2+2: 4
+
+User: Calculate 5 * 8
+Agent: Result of 5 * 8: 40
+
 User: exit
 Agent: Goodbye!
 ```
 
-## Adding Custom Tools
-To add a new tool:
-1. Edit `src/tools.ts` and add your tool to the `tools` array.
-2. Implement the tool's logic in the `func` property.
+## Tools
+The agent supports the following tools by default:
+- **Search**: Mock web search (replace with a real API like SerpAPI or Google Custom Search).
+- **Calculate**: Evaluates mathematical expressions.
 
-Example:
-```typescript
-{
-  name: "weather",
-  description: "Get the current weather for a location",
-  func: async (location: string) => {
-    // Implement weather API logic here
-    return `The weather in ${location} is sunny.`;
-  },
-}
-```
+To add more tools, edit `src/tools.ts` and register them in `src/index.ts`.
 
 ## Testing
-Run the test suite with:
+Run tests with:
 ```bash
 npm test
 ```
 
 ## GitHub Actions
-The repository includes a GitHub Actions workflow that runs tests on every push and pull request. Ensure you add your Mistral API key as a GitHub Secret named `MISTRAL_API_KEY`.
+The repository includes a workflow (`.github/workflows/test.yml`) that runs tests on every push/pull request. Ensure you add your Mistral API key as a GitHub Secret named `MISTRAL_API_KEY`.
 
 ## License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ## Contributing
-Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
+Contributions are welcome! Open an issue or submit a pull request.
 
-## Acknowledgments
+## Acknowledgements
 - [LangChain](https://langchain.com/) for the agent framework.
-- [Mistral AI](https://mistral.ai/) for the language model.
+- [Mistral AI](https://mistral.ai/) for the LLM API.
