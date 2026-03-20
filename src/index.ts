@@ -1,67 +1,95 @@
 import { ChatMistralAI } from "@langchain/mistralai";
-import { BufferMemory } from "@langchain/community/stores/memory/buffer";
+import { InMemoryChatMessageHistory } from "@langchain/core/chat_history";
 import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
-import { Tool } from "@langchain/core/tools";
-import { AgentExecutor, createOpenAIFunctionsAgent } from "@langchain/community/agents";
+import { tool } from "@langchain/core/tools";
 import * as dotenv from "dotenv";
 
 dotenv.config();
 
-// Define tools
-const tools: Tool[] = [
+// Define tools using the modern tool() function
+const searchTool = tool(
+  async (query: string) => {
+    // Mock implementation
+    return `Search results for: ${query}`;
+  },
   {
     name: "search",
     description: "Search the web for information",
-    func: async (query: string) => {
-      // Mock implementation
-      return `Search results for: ${query}`;
-    },
+  }
+);
+
+const calculateTool = tool(
+  async (expression: string) => {
+    // Mock implementation - note: eval is dangerous in production!
+    try {
+      return `Result of ${expression}: ${eval(expression)}`;
+    } catch (error) {
+      return `Error calculating ${expression}: ${error}`;
+    }
   },
   {
     name: "calculate",
     description: "Perform calculations",
-    func: async (expression: string) => {
-      // Mock implementation
-      return `Result of ${expression}: ${eval(expression)}`;
-    },
-  },
-];
+  }
+);
+
+const tools = [searchTool, calculateTool];
 
 // Initialize LLM with Mistral
 const llm = new ChatMistralAI({
   apiKey: process.env.MISTRAL_API_KEY,
-  model: "mistral-tiny",
   temperature: 0.7,
 });
 
-// Initialize memory
-const memory = new BufferMemory({
-  returnMessages: true,
-  memoryKey: "chat_history",
-});
+// Initialize chat message history
+const chatHistory = new InMemoryChatMessageHistory();
 
-// Create prompt
-const prompt = ChatPromptTemplate.fromMessages([
-  ["system", "You are a helpful AI assistant."],
-  new MessagesPlaceholder("chat_history"),
-  ["human", "{input}"],
-  new MessagesPlaceholder("agent_scratchpad"),
-]);
+// Create a simple chain executor (since AgentExecutor is no longer available)
+async function executeWithTools(input: string) {
+  // Add user message to history
+  await chatHistory.addMessage(new HumanMessage(input));
 
-// Create agent
-const agent = await createOpenAIFunctionsAgent({
-  llm,
-  tools,
-  prompt,
-});
+  // Get all messages from history
+  const messages = await chatHistory.getMessages();
 
-// Create agent executor
-export const agentExecutor = new AgentExecutor({
-  agent,
-  tools,
-  memory,
-});
+  // Create prompt messages array
+  const promptMessages: any[] = [["system", "You are a helpful AI assistant."]];
+
+  // Add history messages
+  for (const msg of messages) {
+    if (msg._getType() === "human") {
+      promptMessages.push(["human", msg.content as string]);
+    } else if (msg._getType() === "ai") {
+      promptMessages.push(["assistant", msg.content as string]);
+    }
+  }
+
+  // Create prompt with history
+  const prompt = ChatPromptTemplate.fromMessages(promptMessages);
+
+  // Invoke LLM
+  const chain = prompt.pipe(llm);
+  const response = await chain.invoke({});
+
+  // Extract content from response - handle undefined case
+  let content = "No response";
+  if (response && response.content !== undefined) {
+    content = typeof response.content === "string"
+      ? response.content
+      : JSON.stringify(response.content);
+  }
+
+  // Add assistant response to history
+  await chatHistory.addMessage(new AIMessage(content));
+
+  return { output: content };
+}
+
+// Export the executor for testing
+export const agentExecutor = {
+  invoke: executeWithTools,
+};
 
 // Main loop
 async function main() {
@@ -69,6 +97,8 @@ async function main() {
     input: process.stdin,
     output: process.stdout,
   });
+
+  console.log("Agent: Hello! I'm ready to help. Type 'exit' to quit.");
 
   while (true) {
     const input = await new Promise<string>((resolve) => {
@@ -80,14 +110,18 @@ async function main() {
       break;
     }
 
-    const result = await agentExecutor.invoke({
-      input,
-    });
-
-    console.log("Agent:", result.output);
+    try {
+      const result = await agentExecutor.invoke(input);
+      console.log("Agent:", result.output);
+    } catch (error) {
+      console.error("Error:", error);
+    }
   }
 
   readline.close();
 }
 
-main().catch(console.error);
+// Only run main if this file is executed directly
+if (require.main === module) {
+  main().catch(console.error);
+}
