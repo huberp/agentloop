@@ -2,11 +2,10 @@
   "name": "agentloop",
   "version": "1.0.0",
   "description": "TypeScript LangChain Agent Loop with Mistral LLM",
-  "main": "dist/index.js",
+  "main": "src/index.ts",
   "scripts": {
     "test": "jest",
-    "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "npx ts-node src/index.ts"
   },
   "keywords": ["langchain", "mistral", "agent", "typescript"],
   "author": "P Huber",
@@ -15,7 +14,8 @@
     "dotenv": "^16.4.5",
     "@langchain/core": "^0.1.61",
     "@langchain/mistralai": "^0.0.1",
-    "@langchain/community": "^0.0.40"
+    "@langchain/community": "^0.0.40",
+    "ts-node": "^10.9.2"
   },
   "devDependencies": {
     "jest": "^29.7.0",
