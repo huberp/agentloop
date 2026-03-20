@@ -1,19 +1,28 @@
-import { Tool } from "@langchain/core/tools";
+import { tool } from "@langchain/core/tools";
 
-export const tools: Tool[] = [
+const searchTool = tool(
+  async (query: string) => {
+    return `Search results for: ${query}`;
+  },
   {
     name: "search",
     description: "Search the web for information",
-    func: async (query: string) => {
-      // Implement web search logic or use an API
-      return `Search results for: ${query}`;
-    },
+  }
+);
+
+const calculateTool = tool(
+  async (expression: string) => {
+    // NOTE: Keep this as a simple demo calculator. Do not use eval in production.
+    try {
+      return `Result of ${expression}: ${eval(expression)}`;
+    } catch (error) {
+      return `Error calculating ${expression}: ${error}`;
+    }
   },
   {
     name: "calculate",
     description: "Perform calculations",
-    func: async (expression: string) => {
-      return `Result of ${expression}: ${eval(expression)}`;
-    },
-  },
-];
+  }
+);
+
+export const tools = [searchTool, calculateTool];

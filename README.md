@@ -4,8 +4,9 @@ A **TypeScript LangChain Agent Loop** using the Mistral LLM API, designed for in
 
 ## Features
 - **Mistral LLM Integration**: Uses the Mistral API for natural language understanding and generation.
-- **Tool Support**: Extensible with custom tools (e.g., web search, calculations).
+- **Tool Support**: Extensible tools with native `bindTools` flow and tool-result round trips.
 - **Memory**: Maintains conversation history for context-aware interactions.
+- **Structured Logging**: Uses Pino and logs tool calls, arguments, and tool responses.
 - **Direct TypeScript Execution**: Runs with `ts-node`—no compilation needed.
 
 ## Prerequisites
@@ -25,9 +26,14 @@ A **TypeScript LangChain Agent Loop** using the Mistral LLM API, designed for in
    npm install
    ```
 
-3. Create a `.env` file in the project root and add your Mistral API key:
+3. Create a `.env` file in the project root and add runtime configuration:
    ```env
    MISTRAL_API_KEY=your_mistral_api_key_here
+   LOG_LEVEL=info
+   LOG_ENABLED=true
+   LOG_DESTINATION=stdout
+   LOG_NAME=agentloop
+   LOG_TIMESTAMP=true
    ```
 
 ## Usage
@@ -54,6 +60,26 @@ The agent supports the following tools by default:
 - **Calculate**: Evaluates mathematical expressions.
 
 To add more tools, edit `src/tools.ts` and register them in `src/index.ts`.
+
+## Logging
+- Logging is configured via dotenv-backed config in `src/config.ts`.
+- Logger implementation is in `src/logger.ts` and writes to stdout by default.
+- Each model turn logs:
+   - requested tool count and names
+   - each tool invocation with arguments
+   - each tool result payload
+
+You can change logging behavior with environment variables:
+- `LOG_LEVEL` (for example: `debug`, `info`, `warn`, `error`)
+- `LOG_ENABLED` (`true` or `false`)
+- `LOG_DESTINATION` (`stdout` or `stderr`)
+- `LOG_NAME` (logger name field)
+- `LOG_TIMESTAMP` (`true` or `false`)
+
+## Architecture Notes
+- `src/config.ts` is the single place that initializes dotenv and reads runtime configuration.
+- `src/index.ts` binds tools with `llm.bindTools(tools)` and handles tool execution + tool message injection.
+- Backward compatibility fallback for non-`bindTools` runtimes has been removed after library upgrades.
 
 ## Testing
 Run tests with:

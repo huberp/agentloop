@@ -1,46 +1,16 @@
 import { ChatMistralAI } from "@langchain/mistralai";
 import { InMemoryChatMessageHistory } from "@langchain/core/chat_history";
-import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
-import { HumanMessage, AIMessage } from "@langchain/core/messages";
-import { tool } from "@langchain/core/tools";
-import * as dotenv from "dotenv";
-
-dotenv.config();
-
-// Define tools using the modern tool() function
-const searchTool = tool(
-  async (query: string) => {
-    // Mock implementation
-    return `Search results for: ${query}`;
-  },
-  {
-    name: "search",
-    description: "Search the web for information",
-  }
-);
-
-const calculateTool = tool(
-  async (expression: string) => {
-    // Mock implementation - note: eval is dangerous in production!
-    try {
-      return `Result of ${expression}: ${eval(expression)}`;
-    } catch (error) {
-      return `Error calculating ${expression}: ${error}`;
-    }
-  },
-  {
-    name: "calculate",
-    description: "Perform calculations",
-  }
-);
-
-const tools = [searchTool, calculateTool];
+import { HumanMessage, AIMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
+import { tools } from "./tools";
+import { logger } from "./logger";
+import { appConfig } from "./config";
 
 // Initialize LLM with Mistral
 const llm = new ChatMistralAI({
-  apiKey: process.env.MISTRAL_API_KEY,
+  apiKey: appConfig.mistralApiKey,
   temperature: 0.7,
 });
+const llmWithTools = llm.bindTools(tools);
 
 // Initialize chat message history
 const chatHistory = new InMemoryChatMessageHistory();
@@ -52,38 +22,83 @@ async function executeWithTools(input: string) {
 
   // Get all messages from history
   const messages = await chatHistory.getMessages();
+  const conversation = [new SystemMessage("You are a helpful AI assistant."), ...messages];
 
-  // Create prompt messages array
-  const promptMessages: any[] = [["system", "You are a helpful AI assistant."]];
+  // First pass: the model may answer directly or request tool calls.
+  const response = await llmWithTools.invoke(conversation);
+  const toolCalls = (response as AIMessage).tool_calls ?? [];
 
-  // Add history messages
-  for (const msg of messages) {
-    if (msg._getType() === "human") {
-      promptMessages.push(["human", msg.content as string]);
-    } else if (msg._getType() === "ai") {
-      promptMessages.push(["assistant", msg.content as string]);
-    }
+  logger.info(
+    {
+      input,
+      requestedToolCount: toolCalls.length,
+      requestedTools: toolCalls.map((call) => call.name),
+    },
+    "Model response processed"
+  );
+
+  if (toolCalls.length === 0) {
+    const content =
+      response && response.content !== undefined
+        ? typeof response.content === "string"
+          ? response.content
+          : JSON.stringify(response.content)
+        : "No response";
+
+    await chatHistory.addMessage(new AIMessage(content));
+    return { output: content };
   }
 
-  // Create prompt with history
-  const prompt = ChatPromptTemplate.fromMessages(promptMessages);
+  await chatHistory.addMessage(response as AIMessage);
 
-  // Invoke LLM
-  const chain = prompt.pipe(llm);
-  const response = await chain.invoke({});
+  for (const call of toolCalls) {
+    const selectedTool = tools.find((t) => t.name === call.name);
+    logger.info(
+      {
+        toolName: call.name,
+        toolCallId: call.id ?? call.name,
+        arguments: call.args,
+      },
+      "Invoking tool"
+    );
 
-  // Extract content from response - handle undefined case
-  let content = "No response";
-  if (response && response.content !== undefined) {
-    content = typeof response.content === "string"
-      ? response.content
-      : JSON.stringify(response.content);
+    const rawOutput = selectedTool
+      ? await selectedTool.invoke(call.args)
+      : `Tool not found: ${call.name}`;
+    const content = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
+
+    logger.info(
+      {
+        toolName: call.name,
+        toolCallId: call.id ?? call.name,
+        response: content,
+      },
+      "Tool invocation completed"
+    );
+
+    await chatHistory.addMessage(
+      new ToolMessage({
+        content,
+        tool_call_id: call.id ?? call.name,
+      })
+    );
   }
 
-  // Add assistant response to history
-  await chatHistory.addMessage(new AIMessage(content));
+  const updatedMessages = await chatHistory.getMessages();
+  const finalResponse = await llmWithTools.invoke([
+    new SystemMessage("You are a helpful AI assistant."),
+    ...updatedMessages,
+  ]);
 
-  return { output: content };
+  const finalContent =
+    finalResponse && finalResponse.content !== undefined
+      ? typeof finalResponse.content === "string"
+        ? finalResponse.content
+        : JSON.stringify(finalResponse.content)
+      : "No response";
+
+  await chatHistory.addMessage(new AIMessage(finalContent));
+  return { output: finalContent };
 }
 
 // Export the executor for testing

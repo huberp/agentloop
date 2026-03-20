@@ -3,6 +3,12 @@ jest.mock("@langchain/mistralai", () => {
   return {
     ChatMistralAI: jest.fn().mockImplementation(() => {
       return {
+        bindTools: jest.fn().mockReturnValue({
+          invoke: jest.fn().mockResolvedValue({
+            content: "Hello! I'm doing well, thank you for asking.",
+            tool_calls: [],
+          }),
+        }),
         invoke: jest.fn().mockResolvedValue({
           content: "Hello! I'm doing well, thank you for asking.",
         }),
