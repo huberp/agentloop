@@ -5,6 +5,7 @@ import { logger } from "./logger";
 import { appConfig } from "./config";
 import { createLLM } from "./llm";
 import { getSystemPrompt } from "./prompts/system";
+import { countTokens, trimMessages } from "./context";
 
 // Instantiate the LLM via the provider factory (provider/model/temperature from appConfig)
 const llm = createLLM(appConfig);
@@ -36,7 +37,20 @@ async function executeWithTools(input: string) {
     iteration++;
 
     const messages = await chatHistory.getMessages();
-    const response = (await llmWithTools.invoke([systemMessage, ...messages])) as AIMessage;
+    const fullContext = [systemMessage, ...messages];
+
+    // Trim context to stay within MAX_CONTEXT_TOKENS before calling the LLM
+    const tokensBefore = countTokens(fullContext);
+    const trimmed = trimMessages(fullContext, appConfig.maxContextTokens);
+    const dropped = fullContext.length - trimmed.length;
+    if (dropped > 0) {
+      logger.info(
+        { dropped, tokensBefore, tokensAfter: countTokens(trimmed) },
+        "Context trimmed to fit within MAX_CONTEXT_TOKENS"
+      );
+    }
+
+    const response = (await llmWithTools.invoke(trimmed)) as AIMessage;
     const toolCalls = response.tool_calls ?? [];
 
     // Structured per-iteration log entry
