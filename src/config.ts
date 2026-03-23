@@ -16,6 +16,8 @@ export const appConfig = {
   maxIterations: parseInt(process.env.MAX_ITERATIONS ?? "20", 10),
   // Token budget reserved for future context-window management (0 = disabled)
   maxTokensBudget: parseInt(process.env.MAX_TOKENS_BUDGET ?? "0", 10),
+  // Maximum tokens allowed in the context window (system prompt + history + headroom for response)
+  maxContextTokens: parseInt(process.env.MAX_CONTEXT_TOKENS ?? "28000", 10),
   // LLM provider selection and model settings
   llmProvider: process.env.LLM_PROVIDER ?? "mistral",
   llmModel: process.env.LLM_MODEL ?? "",

@@ -7,30 +7,44 @@
     "test": "jest",
     "start": "npx tsx src/index.ts"
   },
-  "keywords": ["langchain", "mistral", "agent", "typescript"],
+  "keywords": [
+    "langchain",
+    "mistral",
+    "agent",
+    "typescript"
+  ],
   "author": "P Huber",
   "license": "MIT",
   "dependencies": {
-    "dotenv": "^17.3.1",
     "@langchain/core": "^1.1.34",
     "@langchain/mistralai": "^1.0.7",
+    "dotenv": "^17.3.1",
+    "js-tiktoken": "^1.0.21",
     "pino": "^9.9.0",
     "tsx": "^4.21.0"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.5.0",
     "jest": "^30.3.0",
     "ts-jest": "^29.4.6",
-    "typescript": "^5.4.5",
-    "@types/jest": "^30.0.0",
-    "@types/node": "^25.5.0"
+    "typescript": "^5.4.5"
   },
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "node",
-    "moduleFileExtensions": ["ts", "tsx", "js", "jsx", "json"],
+    "moduleFileExtensions": [
+      "ts",
+      "tsx",
+      "js",
+      "jsx",
+      "json"
+    ],
     "transform": {
       "^.+\\.ts$": "ts-jest"
     },
-    "testMatch": ["**/__tests__/**/*.test.ts"]
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ]
   }
 }
