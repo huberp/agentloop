@@ -12,6 +12,10 @@ function asBoolean(value: string | undefined, defaultValue: boolean): boolean {
 
 export const appConfig = {
   mistralApiKey: process.env.MISTRAL_API_KEY ?? "",
+  // Maximum number of agentic iterations before aborting with a warning
+  maxIterations: parseInt(process.env.MAX_ITERATIONS ?? "20", 10),
+  // Token budget reserved for future context-window management (0 = disabled)
+  maxTokensBudget: parseInt(process.env.MAX_TOKENS_BUDGET ?? "0", 10),
   logger: {
     level: process.env.LOG_LEVEL ?? "info",
     enabled: asBoolean(process.env.LOG_ENABLED, true),
