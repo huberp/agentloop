@@ -1,16 +1,13 @@
-import { ChatMistralAI } from "@langchain/mistralai";
 import { InMemoryChatMessageHistory } from "@langchain/core/chat_history";
 import { HumanMessage, AIMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { tools } from "./tools";
 import { logger } from "./logger";
 import { appConfig } from "./config";
+import { createLLM } from "./llm";
 
-// Initialize LLM with Mistral
-const llm = new ChatMistralAI({
-  apiKey: appConfig.mistralApiKey,
-  temperature: 0.7,
-});
-const llmWithTools = llm.bindTools(tools);
+// Instantiate the LLM via the provider factory (provider/model/temperature from appConfig)
+const llm = createLLM(appConfig);
+const llmWithTools = llm.bindTools!(tools);
 
 // Initialize chat message history
 const chatHistory = new InMemoryChatMessageHistory();
