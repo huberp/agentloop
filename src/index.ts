@@ -15,90 +15,79 @@ const llmWithTools = llm.bindTools(tools);
 // Initialize chat message history
 const chatHistory = new InMemoryChatMessageHistory();
 
-// Create a simple chain executor (since AgentExecutor is no longer available)
+/** Extract a plain string from an AIMessage content (string or complex objects). */
+function extractContent(msg: AIMessage): string {
+  if (msg.content === undefined) return "No response";
+  if (typeof msg.content === "string") return msg.content;
+  return JSON.stringify(msg.content);
+}
+
+/**
+ * Agentic loop: invoke the LLM repeatedly until it returns a response with no
+ * tool calls, or until MAX_ITERATIONS is reached.
+ */
 async function executeWithTools(input: string) {
-  // Add user message to history
   await chatHistory.addMessage(new HumanMessage(input));
 
-  // Get all messages from history
-  const messages = await chatHistory.getMessages();
-  const conversation = [new SystemMessage("You are a helpful AI assistant."), ...messages];
+  const systemMessage = new SystemMessage("You are a helpful AI assistant.");
+  let iteration = 0;
 
-  // First pass: the model may answer directly or request tool calls.
-  const response = await llmWithTools.invoke(conversation);
-  const toolCalls = (response as AIMessage).tool_calls ?? [];
+  while (true) {
+    iteration++;
 
-  logger.info(
-    {
-      input,
-      requestedToolCount: toolCalls.length,
-      requestedTools: toolCalls.map((call) => call.name),
-    },
-    "Model response processed"
-  );
+    const messages = await chatHistory.getMessages();
+    const response = (await llmWithTools.invoke([systemMessage, ...messages])) as AIMessage;
+    const toolCalls = response.tool_calls ?? [];
 
-  if (toolCalls.length === 0) {
-    const content =
-      response && response.content !== undefined
-        ? typeof response.content === "string"
-          ? response.content
-          : JSON.stringify(response.content)
-        : "No response";
-
-    await chatHistory.addMessage(new AIMessage(content));
-    return { output: content };
-  }
-
-  await chatHistory.addMessage(response as AIMessage);
-
-  for (const call of toolCalls) {
-    const selectedTool = tools.find((t) => t.name === call.name);
+    // Structured per-iteration log entry
     logger.info(
       {
-        toolName: call.name,
-        toolCallId: call.id ?? call.name,
-        arguments: call.args,
+        iteration,
+        toolCallCount: toolCalls.length,
+        toolCalls: toolCalls.map((call) => call.name),
       },
-      "Invoking tool"
+      "Agent loop iteration"
     );
 
-    const rawOutput = selectedTool
-      ? await selectedTool.invoke(call.args)
-      : `Tool not found: ${call.name}`;
-    const content = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
+    if (toolCalls.length === 0) {
+      // LLM is done — no more tool calls requested
+      const content = extractContent(response);
+      await chatHistory.addMessage(new AIMessage(content));
+      return { output: content };
+    }
 
-    logger.info(
-      {
-        toolName: call.name,
-        toolCallId: call.id ?? call.name,
-        response: content,
-      },
-      "Tool invocation completed"
-    );
+    if (iteration >= appConfig.maxIterations) {
+      // Guard against infinite loops: return last response with a warning
+      const content = extractContent(response);
+      logger.warn({ iteration }, "MAX_ITERATIONS reached; terminating agent loop");
+      return { output: `[Warning: Maximum iterations reached] ${content}` };
+    }
 
-    await chatHistory.addMessage(
-      new ToolMessage({
-        content,
-        tool_call_id: call.id ?? call.name,
-      })
-    );
+    // Record the tool-calling AI message and execute each requested tool
+    await chatHistory.addMessage(response);
+    for (const call of toolCalls) {
+      const selectedTool = tools.find((t) => t.name === call.name);
+
+      logger.info(
+        { toolName: call.name, toolCallId: call.id ?? call.name, arguments: call.args },
+        "Invoking tool"
+      );
+
+      const rawOutput = selectedTool
+        ? await selectedTool.invoke(call.args)
+        : `Tool not found: ${call.name}`;
+      const content = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
+
+      logger.info(
+        { toolName: call.name, toolCallId: call.id ?? call.name, response: content },
+        "Tool invocation completed"
+      );
+
+      await chatHistory.addMessage(
+        new ToolMessage({ content, tool_call_id: call.id ?? call.name })
+      );
+    }
   }
-
-  const updatedMessages = await chatHistory.getMessages();
-  const finalResponse = await llmWithTools.invoke([
-    new SystemMessage("You are a helpful AI assistant."),
-    ...updatedMessages,
-  ]);
-
-  const finalContent =
-    finalResponse && finalResponse.content !== undefined
-      ? typeof finalResponse.content === "string"
-        ? finalResponse.content
-        : JSON.stringify(finalResponse.content)
-      : "No response";
-
-  await chatHistory.addMessage(new AIMessage(finalContent));
-  return { output: finalContent };
 }
 
 // Export the executor for testing
