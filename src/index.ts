@@ -6,6 +6,8 @@ import { appConfig } from "./config";
 import { createLLM } from "./llm";
 import { getSystemPrompt } from "./prompts/system";
 import { countTokens, trimMessages } from "./context";
+import { withRetry, invokeWithTimeout } from "./retry";
+import { ToolExecutionError } from "./errors";
 
 // Instantiate the LLM via the provider factory (provider/model/temperature from appConfig)
 const llm = createLLM(appConfig);
@@ -50,7 +52,11 @@ async function executeWithTools(input: string) {
       );
     }
 
-    const response = (await llmWithTools.invoke(trimmed)) as AIMessage;
+    // Wrap the LLM call with retry + exponential back-off (rate-limit aware)
+    const response = (await withRetry(
+      () => llmWithTools.invoke(trimmed),
+      { maxRetries: appConfig.llmRetryMax, baseDelayMs: appConfig.llmRetryBaseDelayMs }
+    )) as AIMessage;
     const toolCalls = response.tool_calls ?? [];
 
     // Structured per-iteration log entry
@@ -87,15 +93,32 @@ async function executeWithTools(input: string) {
         "Invoking tool"
       );
 
-      const rawOutput = selectedTool
-        ? await selectedTool.invoke(call.args)
-        : `Tool not found: ${call.name}`;
-      const content = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
-
-      logger.info(
-        { toolName: call.name, toolCallId: call.id ?? call.name, response: content },
-        "Tool invocation completed"
-      );
+      let content: string;
+      if (!selectedTool) {
+        content = `Tool not found: ${call.name}`;
+      } else {
+        try {
+          // Enforce per-tool timeout; on expiry ToolExecutionError is thrown
+          const rawOutput = await invokeWithTimeout(
+            selectedTool.invoke(call.args),
+            call.name,
+            appConfig.toolTimeoutMs
+          );
+          content = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
+          logger.info(
+            { toolName: call.name, toolCallId: call.id ?? call.name, response: content },
+            "Tool invocation completed"
+          );
+        } catch (error) {
+          // Tool failure: inject the error as a ToolMessage so the LLM can reason about it
+          const msg = error instanceof Error ? error.message : String(error);
+          content = `Tool error: ${msg}`;
+          logger.error(
+            { toolName: call.name, toolCallId: call.id ?? call.name, error: msg },
+            "Tool invocation failed; injecting error as ToolMessage"
+          );
+        }
+      }
 
       await chatHistory.addMessage(
         new ToolMessage({ content, tool_call_id: call.id ?? call.name })

@@ -18,6 +18,11 @@ export const appConfig = {
   maxTokensBudget: parseInt(process.env.MAX_TOKENS_BUDGET ?? "0", 10),
   // Maximum tokens allowed in the context window (system prompt + history + headroom for response)
   maxContextTokens: parseInt(process.env.MAX_CONTEXT_TOKENS ?? "28000", 10),
+  // LLM retry settings: max retries on API failure and base delay for exponential back-off
+  llmRetryMax: parseInt(process.env.LLM_RETRY_MAX ?? "3", 10),
+  llmRetryBaseDelayMs: parseInt(process.env.LLM_RETRY_BASE_DELAY_MS ?? "500", 10),
+  // Per-tool execution timeout in milliseconds (AbortController kills the promise after this)
+  toolTimeoutMs: parseInt(process.env.TOOL_TIMEOUT_MS ?? "30000", 10),
   // LLM provider selection and model settings
   llmProvider: process.env.LLM_PROVIDER ?? "mistral",
   llmModel: process.env.LLM_MODEL ?? "",
