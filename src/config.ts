@@ -20,6 +20,8 @@ export const appConfig = {
   llmProvider: process.env.LLM_PROVIDER ?? "mistral",
   llmModel: process.env.LLM_MODEL ?? "",
   llmTemperature: parseFloat(process.env.LLM_TEMPERATURE ?? "0.7"),
+  // Optional path to a .txt or .md file that overrides the generated system prompt
+  systemPromptPath: process.env.SYSTEM_PROMPT_PATH ?? "",
   logger: {
     level: process.env.LOG_LEVEL ?? "info",
     enabled: asBoolean(process.env.LOG_ENABLED, true),

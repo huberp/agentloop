@@ -4,6 +4,7 @@ import { tools } from "./tools";
 import { logger } from "./logger";
 import { appConfig } from "./config";
 import { createLLM } from "./llm";
+import { getSystemPrompt } from "./prompts/system";
 
 // Instantiate the LLM via the provider factory (provider/model/temperature from appConfig)
 const llm = createLLM(appConfig);
@@ -26,7 +27,9 @@ function extractContent(msg: AIMessage): string {
 async function executeWithTools(input: string) {
   await chatHistory.addMessage(new HumanMessage(input));
 
-  const systemMessage = new SystemMessage("You are a helpful AI assistant.");
+  const systemMessage = new SystemMessage(
+    await getSystemPrompt({ tools: tools.map((t) => t.name) })
+  );
   let iteration = 0;
 
   while (true) {
