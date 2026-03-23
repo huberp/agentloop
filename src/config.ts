@@ -44,6 +44,8 @@ export const appConfig = {
   toolAllowlist: asStringArray(process.env.TOOL_ALLOWLIST),
   // Comma-separated list of tool names that are always blocked
   toolBlocklist: asStringArray(process.env.TOOL_BLOCKLIST),
+  // Shell tool (Task 2.1): extra blocked command patterns appended to built-in defaults
+  shellCommandBlocklist: asStringArray(process.env.SHELL_COMMAND_BLOCKLIST),
   logger: {
     level: process.env.LOG_LEVEL ?? "info",
     enabled: asBoolean(process.env.LOG_ENABLED, true),
