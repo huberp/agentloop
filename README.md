@@ -34,6 +34,9 @@ A **TypeScript LangChain Agent Loop** using the Mistral LLM API, designed for in
    LOG_DESTINATION=stdout
    LOG_NAME=agentloop
    LOG_TIMESTAMP=true
+   LLM_PROVIDER=mistral
+   LLM_MODEL=
+   LLM_TEMPERATURE=0.7
    ```
 
 ## Usage
@@ -76,9 +79,18 @@ You can change logging behavior with environment variables:
 - `LOG_NAME` (logger name field)
 - `LOG_TIMESTAMP` (`true` or `false`)
 
+## LLM Provider
+
+The LLM is configured via `src/llm.ts`, which exports a `createLLM(config)` factory used by `src/index.ts`.
+
+- `LLM_PROVIDER` — selects the chat model provider (default: `mistral`; add new providers to the switch in `src/llm.ts`)
+- `LLM_MODEL` — optional model name passed to the provider SDK (uses SDK default when empty)
+- `LLM_TEMPERATURE` — sampling temperature (default: `0.7`)
+
 ## Architecture Notes
 - `src/config.ts` is the single place that initializes dotenv and reads runtime configuration.
-- `src/index.ts` binds tools with `llm.bindTools(tools)` and handles tool execution + tool message injection.
+- `src/llm.ts` exports `createLLM(config)`, a provider factory that returns a `BaseChatModel`. Extend the switch block to add new providers.
+- `src/index.ts` uses `createLLM(appConfig)` to obtain the LLM and binds tools with `llm.bindTools(tools)`.
 - Backward compatibility fallback for non-`bindTools` runtimes has been removed after library upgrades.
 
 ## Testing
