@@ -10,12 +10,20 @@ import { createLLM } from "./llm";
 import { getSystemPrompt } from "./prompts/system";
 import { countTokens, trimMessages } from "./context";
 import { withRetry, invokeWithTimeout } from "./retry";
-import { ToolExecutionError } from "./errors";
+import { ToolExecutionError, ToolBlockedError } from "./errors";
 import { ToolRegistry } from "./tools/registry";
+import { ToolPermissionManager } from "./security";
 
 // Instantiate the LLM and tool registry at module level
 const llm = createLLM(appConfig);
 export const toolRegistry = new ToolRegistry();
+
+// Permission manager: enforces blocklist/allowlist and dangerous-tool confirmation
+const permissionManager = new ToolPermissionManager({
+  autoApproveAll: appConfig.autoApproveAll,
+  toolAllowlist: appConfig.toolAllowlist,
+  toolBlocklist: appConfig.toolBlocklist,
+});
 
 // LLM bound with tools — set during ensureInitialized() before first use
 let _llmWithTools: Runnable<BaseLanguageModelInput, AIMessageChunk> | null = null;
@@ -125,6 +133,12 @@ async function executeWithTools(input: string) {
         content = `Tool not found: ${call.name}`;
       } else {
         try {
+          // Enforce permission policy (blocklist / allowlist / dangerous-tool confirmation)
+          const definition = toolRegistry.getDefinition(call.name);
+          if (definition) {
+            await permissionManager.checkPermission(definition, call.args);
+          }
+
           // Enforce per-tool timeout; on expiry ToolExecutionError is thrown
           const rawOutput = await invokeWithTimeout(
             selectedTool.invoke(call.args),
@@ -137,13 +151,22 @@ async function executeWithTools(input: string) {
             "Tool invocation completed"
           );
         } catch (error) {
-          // Tool failure: inject the error as a ToolMessage so the LLM can reason about it
-          const msg = error instanceof Error ? error.message : String(error);
-          content = `Tool error: ${msg}`;
-          logger.error(
-            { toolName: call.name, toolCallId: call.id ?? call.name, error: msg },
-            "Tool invocation failed; injecting error as ToolMessage"
-          );
+          // Blocked tool: descriptive message injected as ToolMessage so LLM can reason about it
+          if (error instanceof ToolBlockedError) {
+            content = `Tool blocked: ${error.message}`;
+            logger.warn(
+              { toolName: call.name, toolCallId: call.id ?? call.name, reason: error.message },
+              "Tool execution blocked by permission manager"
+            );
+          } else {
+            // Tool failure: inject the error as a ToolMessage so the LLM can reason about it
+            const msg = error instanceof Error ? error.message : String(error);
+            content = `Tool error: ${msg}`;
+            logger.error(
+              { toolName: call.name, toolCallId: call.id ?? call.name, error: msg },
+              "Tool invocation failed; injecting error as ToolMessage"
+            );
+          }
         }
       }
 
