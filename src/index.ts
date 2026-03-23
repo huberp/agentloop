@@ -1,6 +1,9 @@
+import * as path from "path";
 import { InMemoryChatMessageHistory } from "@langchain/core/chat_history";
 import { HumanMessage, AIMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
-import { tools } from "./tools";
+import type { Runnable } from "@langchain/core/runnables";
+import type { BaseLanguageModelInput } from "@langchain/core/language_models/base";
+import type { AIMessageChunk } from "@langchain/core/messages";
 import { logger } from "./logger";
 import { appConfig } from "./config";
 import { createLLM } from "./llm";
@@ -8,10 +11,32 @@ import { getSystemPrompt } from "./prompts/system";
 import { countTokens, trimMessages } from "./context";
 import { withRetry, invokeWithTimeout } from "./retry";
 import { ToolExecutionError } from "./errors";
+import { ToolRegistry } from "./tools/registry";
 
-// Instantiate the LLM via the provider factory (provider/model/temperature from appConfig)
+// Instantiate the LLM and tool registry at module level
 const llm = createLLM(appConfig);
-const llmWithTools = llm.bindTools!(tools);
+export const toolRegistry = new ToolRegistry();
+
+// LLM bound with tools — set during ensureInitialized() before first use
+let _llmWithTools: Runnable<BaseLanguageModelInput, AIMessageChunk> | null = null;
+
+// Lazy-init promise: loadFromDirectory + bindTools run exactly once
+let _initPromise: Promise<void> | null = null;
+
+/**
+ * Load tools from the tools/ directory and bind them to the LLM.
+ * Called automatically on the first invocation of executeWithTools().
+ */
+async function ensureInitialized(): Promise<void> {
+  if (!_initPromise) {
+    _initPromise = toolRegistry
+      .loadFromDirectory(path.join(__dirname, "tools"))
+      .then(() => {
+        _llmWithTools = llm.bindTools!(toolRegistry.toLangChainTools());
+      });
+  }
+  return _initPromise;
+}
 
 // Initialize chat message history
 const chatHistory = new InMemoryChatMessageHistory();
@@ -28,10 +53,12 @@ function extractContent(msg: AIMessage): string {
  * tool calls, or until MAX_ITERATIONS is reached.
  */
 async function executeWithTools(input: string) {
+  // Ensure tools are loaded and LLM is bound on first call
+  await ensureInitialized();
   await chatHistory.addMessage(new HumanMessage(input));
 
   const systemMessage = new SystemMessage(
-    await getSystemPrompt({ tools: tools.map((t) => t.name) })
+    await getSystemPrompt({ tools: toolRegistry.list().map((t) => t.name) })
   );
   let iteration = 0;
 
@@ -54,7 +81,7 @@ async function executeWithTools(input: string) {
 
     // Wrap the LLM call with retry + exponential back-off (rate-limit aware)
     const response = (await withRetry(
-      () => llmWithTools.invoke(trimmed),
+      () => _llmWithTools!.invoke(trimmed),
       { maxRetries: appConfig.llmRetryMax, baseDelayMs: appConfig.llmRetryBaseDelayMs }
     )) as AIMessage;
     const toolCalls = response.tool_calls ?? [];
@@ -86,7 +113,7 @@ async function executeWithTools(input: string) {
     // Record the tool-calling AI message and execute each requested tool
     await chatHistory.addMessage(response);
     for (const call of toolCalls) {
-      const selectedTool = tools.find((t) => t.name === call.name);
+      const selectedTool = toolRegistry.get(call.name);
 
       logger.info(
         { toolName: call.name, toolCallId: call.id ?? call.name, arguments: call.args },
