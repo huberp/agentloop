@@ -35,3 +35,11 @@ export class ContextOverflowError extends Error {
     this.name = "ContextOverflowError";
   }
 }
+
+/** Thrown when a tool is blocked by the permission manager (blocklist, allowlist, or user denial). */
+export class ToolBlockedError extends Error {
+  constructor(public readonly toolName: string, message: string) {
+    super(message);
+    this.name = "ToolBlockedError";
+  }
+}

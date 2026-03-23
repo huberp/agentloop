@@ -10,6 +10,15 @@ function asBoolean(value: string | undefined, defaultValue: boolean): boolean {
   return value.toLowerCase() === "true";
 }
 
+/** Parse a comma-separated env var into a trimmed, non-empty string array. */
+function asStringArray(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export const appConfig = {
   mistralApiKey: process.env.MISTRAL_API_KEY ?? "",
   // Maximum number of agentic iterations before aborting with a warning
@@ -29,6 +38,12 @@ export const appConfig = {
   llmTemperature: parseFloat(process.env.LLM_TEMPERATURE ?? "0.7"),
   // Optional path to a .txt or .md file that overrides the generated system prompt
   systemPromptPath: process.env.SYSTEM_PROMPT_PATH ?? "",
+  // Tool security (Task 1.7): bypass all confirmation prompts (for CI / non-interactive use)
+  autoApproveAll: asBoolean(process.env.AUTO_APPROVE_ALL, false),
+  // Comma-separated list of tool names that are allowed to run (empty = allow all)
+  toolAllowlist: asStringArray(process.env.TOOL_ALLOWLIST),
+  // Comma-separated list of tool names that are always blocked
+  toolBlocklist: asStringArray(process.env.TOOL_BLOCKLIST),
   logger: {
     level: process.env.LOG_LEVEL ?? "info",
     enabled: asBoolean(process.env.LOG_ENABLED, true),
