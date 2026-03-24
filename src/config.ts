@@ -46,6 +46,8 @@ export const appConfig = {
   toolBlocklist: asStringArray(process.env.TOOL_BLOCKLIST),
   // Shell tool (Task 2.1): extra blocked command patterns appended to built-in defaults
   shellCommandBlocklist: asStringArray(process.env.SHELL_COMMAND_BLOCKLIST),
+  // File management tools (Task 2.2): all file operations are restricted to this directory
+  workspaceRoot: process.env.WORKSPACE_ROOT ?? process.cwd(),
   logger: {
     level: process.env.LOG_LEVEL ?? "info",
     enabled: asBoolean(process.env.LOG_ENABLED, true),
