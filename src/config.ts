@@ -46,6 +46,10 @@ export const appConfig = {
   toolBlocklist: asStringArray(process.env.TOOL_BLOCKLIST),
   // Shell tool (Task 2.1): extra blocked command patterns appended to built-in defaults
   shellCommandBlocklist: asStringArray(process.env.SHELL_COMMAND_BLOCKLIST),
+  // Code execution tool (Task 2.5): timeout for code-run (falls back to TOOL_TIMEOUT_MS)
+  executionTimeoutMs: parseInt(process.env.EXECUTION_TIMEOUT_MS ?? "60000", 10),
+  // Code execution environment label — reserved for future sandboxing (Phase 4)
+  executionEnvironment: process.env.EXECUTION_ENVIRONMENT ?? "local",
   // File management tools (Task 2.2): all file operations are restricted to this directory
   workspaceRoot: process.env.WORKSPACE_ROOT ?? process.cwd(),
   logger: {
