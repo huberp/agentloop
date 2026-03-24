@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import type { WorkspaceInfo } from "../workspace";
 
 // Mock appConfig so tests don't require a real .env file
 jest.mock("../config", () => ({
@@ -94,6 +95,59 @@ describe("getSystemPrompt", () => {
   it("throws when SYSTEM_PROMPT_PATH points to a non-existent file", async () => {
     cfg.systemPromptPath = "/non/existent/prompt.txt";
     await expect(getSystemPrompt()).rejects.toThrow();
+  });
+
+  // --- Workspace context ---
+
+  it("includes workspace language in the prompt", async () => {
+    const workspace: WorkspaceInfo = {
+      language: "node",
+      framework: "none",
+      packageManager: "npm",
+      hasTests: true,
+      testCommand: "npm test",
+      lintCommand: "npm run lint",
+      buildCommand: "npm run build",
+      entryPoints: [],
+      gitInitialized: true,
+    };
+    const prompt = await getSystemPrompt({ workspace });
+    expect(prompt).toContain("node");
+    expect(prompt).toContain("npm");
+  });
+
+  it("includes workspace test command in the prompt", async () => {
+    const workspace: WorkspaceInfo = {
+      language: "python",
+      framework: "django",
+      packageManager: "poetry",
+      hasTests: true,
+      testCommand: "pytest",
+      lintCommand: "flake8",
+      buildCommand: "",
+      entryPoints: [],
+      gitInitialized: false,
+    };
+    const prompt = await getSystemPrompt({ workspace });
+    expect(prompt).toContain("pytest");
+    expect(prompt).toContain("django");
+  });
+
+  it("omits framework line when framework is 'none'", async () => {
+    const workspace: WorkspaceInfo = {
+      language: "go",
+      framework: "none",
+      packageManager: "go mod",
+      hasTests: false,
+      testCommand: "go test ./...",
+      lintCommand: "",
+      buildCommand: "go build ./...",
+      entryPoints: [],
+      gitInitialized: false,
+    };
+    const prompt = await getSystemPrompt({ workspace });
+    expect(prompt).not.toContain("Framework:");
+    expect(prompt).toContain("go");
   });
 });
 

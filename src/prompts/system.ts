@@ -1,5 +1,6 @@
 import * as fs from "fs/promises";
 import { appConfig } from "../config";
+import type { WorkspaceInfo } from "../workspace";
 
 /** Optional context for prompt generation. */
 export interface SystemPromptContext {
@@ -7,6 +8,8 @@ export interface SystemPromptContext {
   tools?: string[];
   /** Brief project or task description to include in the prompt. */
   projectInfo?: string;
+  /** Workspace analysis result injected so the LLM understands the project. */
+  workspace?: WorkspaceInfo;
 }
 
 /**
@@ -23,12 +26,31 @@ function buildBasePrompt(context: SystemPromptContext): string {
     ? `\nProject context: ${context.projectInfo}`
     : "";
 
+  // Format workspace info as a concise context block when provided
+  const workspaceSection = context.workspace
+    ? buildWorkspaceSection(context.workspace)
+    : "";
+
   return (
-    `You are a helpful AI assistant agent.${projectSection}\n` +
+    `You are a helpful AI assistant agent.${projectSection}${workspaceSection}\n` +
     `${toolList}\n` +
     `Always prefer using a tool when it can provide a more accurate or up-to-date answer.\n` +
     `Be concise, precise, and honest in your responses.`
   );
+}
+
+/** Format a WorkspaceInfo object into a human-readable prompt section. */
+function buildWorkspaceSection(ws: WorkspaceInfo): string {
+  const lines: string[] = ["\nWorkspace context:"];
+  lines.push(`  Language: ${ws.language}`);
+  if (ws.framework !== "none") lines.push(`  Framework: ${ws.framework}`);
+  lines.push(`  Package manager: ${ws.packageManager}`);
+  if (ws.testCommand) lines.push(`  Test command: ${ws.testCommand}`);
+  if (ws.lintCommand) lines.push(`  Lint command: ${ws.lintCommand}`);
+  if (ws.buildCommand) lines.push(`  Build command: ${ws.buildCommand}`);
+  if (ws.entryPoints.length > 0) lines.push(`  Entry points: ${ws.entryPoints.join(", ")}`);
+  lines.push(`  Git initialized: ${ws.gitInitialized}`);
+  return lines.join("\n");
 }
 
 /**

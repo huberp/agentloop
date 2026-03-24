@@ -1,0 +1,11 @@
+[tool.poetry]
+name = "my-python-app"
+version = "0.1.0"
+description = "A sample Python project"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+django = "^4.2"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

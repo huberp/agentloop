@@ -13,6 +13,7 @@ import { withRetry, invokeWithTimeout } from "./retry";
 import { ToolExecutionError, ToolBlockedError } from "./errors";
 import { ToolRegistry } from "./tools/registry";
 import { ToolPermissionManager } from "./security";
+import { analyzeWorkspace, type WorkspaceInfo } from "./workspace";
 
 // Instantiate the LLM and tool registry at module level
 const llm = createLLM(appConfig);
@@ -30,6 +31,10 @@ let _llmWithTools: Runnable<BaseLanguageModelInput, AIMessageChunk> | null = nul
 
 // Lazy-init promise: loadFromDirectory + bindTools run exactly once
 let _initPromise: Promise<void> | null = null;
+
+// Workspace analysis is cached after the first call; the workspace rarely changes
+// between messages within a single agent session.
+let _workspaceInfo: WorkspaceInfo | null = null;
 
 /**
  * Load tools from the tools/ directory and bind them to the LLM.
@@ -65,8 +70,13 @@ async function executeWithTools(input: string) {
   await ensureInitialized();
   await chatHistory.addMessage(new HumanMessage(input));
 
+  // Analyse the workspace once per session (cached for subsequent messages)
+  if (!_workspaceInfo) {
+    _workspaceInfo = await analyzeWorkspace(appConfig.workspaceRoot);
+  }
+
   const systemMessage = new SystemMessage(
-    await getSystemPrompt({ tools: toolRegistry.list().map((t) => t.name) })
+    await getSystemPrompt({ tools: toolRegistry.list().map((t) => t.name), workspace: _workspaceInfo })
   );
   let iteration = 0;
 
