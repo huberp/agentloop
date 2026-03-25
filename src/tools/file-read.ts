@@ -51,10 +51,17 @@ export const toolDefinition: ToolDefinition = {
     encoding?: "utf-8" | "base64";
   }): Promise<string> => {
     const resolved = resolveSafe(appConfig.workspaceRoot, filePath);
-    const buffer = await fs.readFile(resolved);
 
+    // Check file size before reading to enforce the MAX_FILE_SIZE_BYTES limit
     const stat = await fs.stat(resolved);
     const sizeBytes = stat.size;
+    if (sizeBytes > appConfig.maxFileSizeBytes) {
+      throw new Error(
+        `File "${filePath}" is ${sizeBytes} bytes which exceeds the maximum allowed size of ${appConfig.maxFileSizeBytes} bytes`
+      );
+    }
+
+    const buffer = await fs.readFile(resolved);
 
     // Determine encoding: use the explicit request, or auto-detect.
     const detectedEncoding: "utf-8" | "base64" =

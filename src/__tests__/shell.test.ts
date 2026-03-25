@@ -1,4 +1,8 @@
+import * as fs from "fs/promises";
+import * as os from "os";
+import * as path from "path";
 import { toolDefinition } from "../tools/shell";
+import { appConfig } from "../config";
 
 /** Parse the JSON string returned by the shell tool. */
 function parseResult(raw: string): { stdout: string; stderr: string; exitCode: number } {
@@ -13,6 +17,17 @@ describe("shell tool — metadata", () => {
 });
 
 describe("shell tool — (a) successful command", () => {
+  let workspace: string;
+
+  beforeAll(async () => {
+    workspace = await fs.mkdtemp(path.join(os.tmpdir(), "agentloop-shell-test-"));
+    (appConfig as Record<string, unknown>).workspaceRoot = workspace;
+  });
+
+  afterAll(async () => {
+    await fs.rm(workspace, { recursive: true, force: true });
+  });
+
   it("returns stdout and exitCode 0 for 'echo hello'", async () => {
     const raw = await toolDefinition.execute({ command: "echo hello" });
     const result = parseResult(raw);
@@ -22,12 +37,24 @@ describe("shell tool — (a) successful command", () => {
     expect(result.exitCode).toBe(0);
   });
 
-  it("accepts a configurable working directory", async () => {
-    const raw = await toolDefinition.execute({ command: "pwd", cwd: "/tmp" });
+  it("accepts a configurable working directory within the workspace", async () => {
+    // Create a sub-directory inside the workspace to use as cwd
+    const subdir = path.join(workspace, "subdir");
+    await fs.mkdir(subdir, { recursive: true });
+
+    const raw = await toolDefinition.execute({ command: "pwd", cwd: "subdir" });
     const result = parseResult(raw);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout.trim()).toBe("/tmp");
+    expect(result.stdout.trim()).toBe(subdir);
+  });
+
+  it("rejects a cwd that escapes the workspace root", async () => {
+    const raw = await toolDefinition.execute({ command: "pwd", cwd: "../../tmp" });
+    const result = parseResult(raw);
+
+    expect(result.exitCode).toBe(-1);
+    expect(result.stderr).toMatch(/outside the workspace root/i);
   });
 
   it("merges extra environment variables into the process", async () => {

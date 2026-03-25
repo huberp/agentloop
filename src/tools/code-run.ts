@@ -3,6 +3,7 @@ import { execFile } from "child_process";
 import * as path from "path";
 import type { ToolDefinition } from "./registry";
 import { appConfig } from "../config";
+import { resolveSafe } from "./file-utils";
 
 /** Execution modes supported by the code-run tool. */
 type ExecutionMode = "command" | "file";
@@ -110,8 +111,23 @@ export const toolDefinition: ToolDefinition = {
     timeout?: number;
   }): Promise<string> => {
     const effectiveTimeout = timeout ?? appConfig.executionTimeoutMs;
-    const effectiveCwd = cwd ?? process.cwd();
     const effectiveEnv: NodeJS.ProcessEnv = { ...process.env, ...env };
+
+    // Confine working directory to workspace root (path traversal prevention)
+    let effectiveCwd: string;
+    if (cwd) {
+      try {
+        effectiveCwd = resolveSafe(appConfig.workspaceRoot, cwd);
+      } catch {
+        return JSON.stringify({
+          stdout: "",
+          stderr: `Working directory "${cwd}" is outside the workspace root`,
+          exitCode: -1,
+        } as CodeRunResult);
+      }
+    } else {
+      effectiveCwd = process.cwd();
+    }
 
     let executable: string;
     let args: string[];

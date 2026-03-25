@@ -5,7 +5,7 @@ import type { BaseChatMessageHistory } from "@langchain/core/chat_history";
 import type { BaseLanguageModelInput } from "@langchain/core/language_models/base";
 import type { SystemMessage } from "@langchain/core/messages";
 import { ToolRegistry } from "./tools/registry";
-import { ToolPermissionManager } from "./security";
+import { ToolPermissionManager, ConcurrencyLimiter } from "./security";
 import { invokeWithTimeout } from "./retry";
 import { ToolBlockedError } from "./errors";
 import { logger } from "./logger";
@@ -32,6 +32,8 @@ export interface StreamingDeps {
   maxIterations: number;
   maxContextTokens: number;
   toolTimeoutMs: number;
+  /** Optional concurrency limiter; when absent, no limit is enforced. */
+  concurrencyLimiter?: ConcurrencyLimiter;
 }
 
 /**
@@ -59,6 +61,7 @@ export async function* streamWithTools(
     maxIterations,
     maxContextTokens,
     toolTimeoutMs,
+    concurrencyLimiter,
   } = deps;
 
   await chatHistory.addMessage(new HumanMessage(input));
@@ -177,11 +180,11 @@ export async function* streamWithTools(
             if (definition) {
               await permissionManager.checkPermission(definition, call.args);
             }
-            const rawOutput = await invokeWithTimeout(
-              selectedTool.invoke(call.args),
-              call.name,
-              toolTimeoutMs
-            );
+            const rawOutput = await (concurrencyLimiter
+              ? concurrencyLimiter.run(() =>
+                  invokeWithTimeout(selectedTool.invoke(call.args), call.name, toolTimeoutMs)
+                )
+              : invokeWithTimeout(selectedTool.invoke(call.args), call.name, toolTimeoutMs));
             content = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
             logger.info(
               { toolName: call.name, toolCallId: call.id, response: content },

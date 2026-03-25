@@ -75,6 +75,15 @@ export const appConfig = {
   // MCP client integration (Task 2.8): JSON array of server configs
   // Each entry: { name, transport, command?, args?, url? }
   mcpServers: parseMcpServers(process.env.MCP_SERVERS),
+  // Security hardening (Task 4.3)
+  // Maximum number of bytes allowed for file read/write operations (default: 10 MB)
+  maxFileSizeBytes: parseInt(process.env.MAX_FILE_SIZE_BYTES ?? "10485760", 10),
+  // Maximum number of bytes allowed in shell stdout+stderr combined (default: 1 MB)
+  maxShellOutputBytes: parseInt(process.env.MAX_SHELL_OUTPUT_BYTES ?? "1048576", 10),
+  // Maximum number of tool executions allowed to run concurrently (0 = unlimited)
+  maxConcurrentTools: parseInt(process.env.MAX_CONCURRENT_TOOLS ?? "10", 10),
+  // Comma-separated allowlist of domains/IPs permitted for network tool requests (empty = allow all)
+  networkAllowedDomains: asStringArray(process.env.NETWORK_ALLOWED_DOMAINS),
   // Streaming response support (Task 4.2): print tokens as they arrive in the CLI
   streamingEnabled: asBoolean(process.env.STREAMING_ENABLED, false),
   // Observability & Tracing (Task 4.1)
