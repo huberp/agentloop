@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../tools/registry";
 import type { ToolRegistry } from "../tools/registry";
-import { McpClient, type McpServerConfig, type McpToolInfo } from "./client";
+import { McpClient, type McpServerConfig, type McpPromptInfo, type McpToolInfo, type McpSamplingHandler } from "./client";
 import { logger } from "../logger";
 
 /**
@@ -110,3 +110,116 @@ export async function registerMcpTools(
 
   return clients;
 }
+
+/** Discovered resources from a single MCP server. */
+export interface McpServerResources {
+  serverName: string;
+  resources: Array<{ uri: string; name: string; description?: string; mimeType?: string }>;
+  /** Read a resource by URI, delegating to the underlying McpClient. */
+  read: (uri: string) => Promise<string>;
+}
+
+/**
+ * Connect to each configured MCP server and discover its resources.
+ * Returns one entry per successfully connected server.
+ * Servers that fail are skipped with a logged warning.
+ */
+export async function registerMcpResources(
+  serverConfigs: McpServerConfig[]
+): Promise<McpServerResources[]> {
+  const results: McpServerResources[] = [];
+
+  for (const config of serverConfigs) {
+    const client = new McpClient(config);
+
+    try {
+      await client.connect();
+      const resources = await client.listResources();
+
+      results.push({
+        serverName: config.name,
+        resources,
+        read: (uri: string) => client.readResource(uri),
+      });
+
+      logger.info(
+        { server: config.name, resourceCount: resources.length },
+        "MCP resources discovered"
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ server: config.name, error: msg }, "Failed to discover MCP resources; skipping");
+      try {
+        await client.disconnect();
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+
+  return results;
+}
+
+/** Discovered prompts from a single MCP server. */
+export interface McpServerPrompts {
+  serverName: string;
+  prompts: McpPromptInfo[];
+  /** Resolve a prompt by name with optional template arguments. */
+  get: (name: string, args?: Record<string, string>) => Promise<Array<{ role: "user" | "assistant"; content: string }>>;
+}
+
+/**
+ * Connect to each configured MCP server and discover its prompt templates.
+ * Returns one entry per successfully connected server.
+ * Servers that fail are skipped with a logged warning.
+ */
+export async function registerMcpPrompts(
+  serverConfigs: McpServerConfig[]
+): Promise<McpServerPrompts[]> {
+  const results: McpServerPrompts[] = [];
+
+  for (const config of serverConfigs) {
+    const client = new McpClient(config);
+
+    try {
+      await client.connect();
+      const prompts = await client.listPrompts();
+
+      results.push({
+        serverName: config.name,
+        prompts,
+        get: (name: string, args?: Record<string, string>) => client.getPrompt(name, args),
+      });
+
+      logger.info(
+        { server: config.name, promptCount: prompts.length },
+        "MCP prompts discovered"
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ server: config.name, error: msg }, "Failed to discover MCP prompts; skipping");
+      try {
+        await client.disconnect();
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Register a sampling handler on every client in the provided list.
+ * Call this after clients have been created but before they connect,
+ * or on freshly created clients before their first request.
+ *
+ * The handler is responsible for calling the agent's LLM and returning the reply text.
+ */
+export function setupMcpSampling(clients: McpClient[], handler: McpSamplingHandler): void {
+  for (const client of clients) {
+    client.setSamplingHandler(handler);
+    logger.info({ server: client.serverName }, "Sampling handler registered on MCP client");
+  }
+}
+
