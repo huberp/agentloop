@@ -19,6 +19,26 @@ function asStringArray(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/** Shape of a single entry in the MCP_SERVERS configuration array. */
+interface McpServerEntry {
+  name: string;
+  transport: "stdio" | "sse";
+  command?: string;
+  args?: string[];
+  url?: string;
+}
+
+/** Parse MCP_SERVERS as a JSON array; returns an empty array on missing or invalid input. */
+function parseMcpServers(value: string | undefined): McpServerEntry[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? (parsed as McpServerEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export const appConfig = {
   mistralApiKey: process.env.MISTRAL_API_KEY ?? "",
   // Maximum number of agentic iterations before aborting with a warning
@@ -52,6 +72,9 @@ export const appConfig = {
   executionEnvironment: process.env.EXECUTION_ENVIRONMENT ?? "local",
   // File management tools (Task 2.2): all file operations are restricted to this directory
   workspaceRoot: process.env.WORKSPACE_ROOT ?? process.cwd(),
+  // MCP client integration (Task 2.8): JSON array of server configs
+  // Each entry: { name, transport, command?, args?, url? }
+  mcpServers: parseMcpServers(process.env.MCP_SERVERS),
   logger: {
     level: process.env.LOG_LEVEL ?? "info",
     enabled: asBoolean(process.env.LOG_ENABLED, true),

@@ -14,6 +14,7 @@ import { ToolExecutionError, ToolBlockedError } from "./errors";
 import { ToolRegistry } from "./tools/registry";
 import { ToolPermissionManager } from "./security";
 import { analyzeWorkspace, type WorkspaceInfo } from "./workspace";
+import { registerMcpTools } from "./mcp/bridge";
 
 // Instantiate the LLM and tool registry at module level
 const llm = createLLM(appConfig);
@@ -44,7 +45,11 @@ async function ensureInitialized(): Promise<void> {
   if (!_initPromise) {
     _initPromise = toolRegistry
       .loadFromDirectory(path.join(__dirname, "tools"))
-      .then(() => {
+      .then(async () => {
+        // Connect to configured MCP servers and register their tools
+        if (appConfig.mcpServers.length > 0) {
+          await registerMcpTools(appConfig.mcpServers, toolRegistry);
+        }
         _llmWithTools = llm.bindTools!(toolRegistry.toLangChainTools());
       });
   }
