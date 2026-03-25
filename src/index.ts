@@ -15,6 +15,12 @@ import { ToolRegistry } from "./tools/registry";
 import { ToolPermissionManager } from "./security";
 import { analyzeWorkspace, type WorkspaceInfo } from "./workspace";
 import { registerMcpTools } from "./mcp/bridge";
+import {
+  type Tracer,
+  NoopTracer,
+  createTracer,
+  newInvocationId,
+} from "./observability";
 
 // Instantiate the LLM and tool registry at module level
 const llm = createLLM(appConfig);
@@ -36,6 +42,30 @@ let _initPromise: Promise<void> | null = null;
 // Workspace analysis is cached after the first call; the workspace rarely changes
 // between messages within a single agent session.
 let _workspaceInfo: WorkspaceInfo | null = null;
+
+// Active tracer — defaults to no-op; created lazily from config on first invocation
+let _tracer: Tracer | null = null;
+
+/**
+ * Override the active tracer. Useful in tests to inject a FileTracer
+ * pointing at a temp directory without reloading the module.
+ */
+export function setTracer(t: Tracer): void {
+  _tracer = t;
+}
+
+/** Return the active tracer, creating it from config on first access. */
+function getTracer(): Tracer {
+  if (!_tracer) {
+    _tracer = createTracer({
+      enabled: appConfig.tracingEnabled,
+      outputDir: appConfig.traceOutputDir,
+      costPerInputTokenUsd: appConfig.tracingCostPerInputTokenUsd,
+      costPerOutputTokenUsd: appConfig.tracingCostPerOutputTokenUsd,
+    });
+  }
+  return _tracer;
+}
 
 /**
  * Load tools from the tools/ directory and bind them to the LLM.
@@ -75,6 +105,10 @@ async function executeWithTools(input: string) {
   await ensureInitialized();
   await chatHistory.addMessage(new HumanMessage(input));
 
+  // Start an invocation trace (no-op when tracing is disabled)
+  const invocationId = newInvocationId();
+  getTracer().startInvocation(invocationId, input);
+
   // Analyse the workspace once per session (cached for subsequent messages)
   if (!_workspaceInfo) {
     _workspaceInfo = await analyzeWorkspace(appConfig.workspaceRoot);
@@ -102,12 +136,32 @@ async function executeWithTools(input: string) {
       );
     }
 
+    // Time the LLM call for the trace span
+    const llmCallStart = Date.now();
+
     // Wrap the LLM call with retry + exponential back-off (rate-limit aware)
     const response = (await withRetry(
       () => _llmWithTools!.invoke(trimmed),
       { maxRetries: appConfig.llmRetryMax, baseDelayMs: appConfig.llmRetryBaseDelayMs }
     )) as AIMessage;
+
+    const llmCallEnd = Date.now();
     const toolCalls = response.tool_calls ?? [];
+
+    // Extract token usage from the response metadata when available
+    const usageMetadata = (response as any).usage_metadata;
+    const promptTokens: number = usageMetadata?.input_tokens ?? 0;
+    const completionTokens: number = usageMetadata?.output_tokens ?? 0;
+
+    getTracer().recordLlmCall(invocationId, {
+      startedAt: llmCallStart,
+      endedAt: llmCallEnd,
+      durationMs: llmCallEnd - llmCallStart,
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens,
+      toolCallCount: toolCalls.length,
+    });
 
     // Structured per-iteration log entry
     logger.info(
@@ -123,6 +177,7 @@ async function executeWithTools(input: string) {
       // LLM is done — no more tool calls requested
       const content = extractContent(response);
       await chatHistory.addMessage(new AIMessage(content));
+      await getTracer().endInvocation(invocationId);
       return { output: content };
     }
 
@@ -130,6 +185,7 @@ async function executeWithTools(input: string) {
       // Guard against infinite loops: return last response with a warning
       const content = extractContent(response);
       logger.warn({ iteration }, "MAX_ITERATIONS reached; terminating agent loop");
+      await getTracer().endInvocation(invocationId);
       return { output: `[Warning: Maximum iterations reached] ${content}` };
     }
 
@@ -143,9 +199,15 @@ async function executeWithTools(input: string) {
         "Invoking tool"
       );
 
+      const toolStart = Date.now();
+      let toolSuccess = true;
+      let toolError: string | undefined;
       let content: string;
+
       if (!selectedTool) {
         content = `Tool not found: ${call.name}`;
+        toolSuccess = false;
+        toolError = content;
       } else {
         try {
           // Enforce permission policy (blocklist / allowlist / dangerous-tool confirmation)
@@ -166,8 +228,10 @@ async function executeWithTools(input: string) {
             "Tool invocation completed"
           );
         } catch (error) {
+          toolSuccess = false;
           // Blocked tool: descriptive message injected as ToolMessage so LLM can reason about it
           if (error instanceof ToolBlockedError) {
+            toolError = error.message;
             content = `Tool blocked: ${error.message}`;
             logger.warn(
               { toolName: call.name, toolCallId: call.id ?? call.name, reason: error.message },
@@ -176,6 +240,7 @@ async function executeWithTools(input: string) {
           } else {
             // Tool failure: inject the error as a ToolMessage so the LLM can reason about it
             const msg = error instanceof Error ? error.message : String(error);
+            toolError = msg;
             content = `Tool error: ${msg}`;
             logger.error(
               { toolName: call.name, toolCallId: call.id ?? call.name, error: msg },
@@ -184,6 +249,17 @@ async function executeWithTools(input: string) {
           }
         }
       }
+
+      const toolEnd = Date.now();
+      getTracer().recordToolExecution(invocationId, {
+        startedAt: toolStart,
+        endedAt: toolEnd,
+        durationMs: toolEnd - toolStart,
+        toolName: call.name,
+        callId: call.id ?? call.name,
+        success: toolSuccess,
+        error: toolError,
+      });
 
       await chatHistory.addMessage(
         new ToolMessage({ content, tool_call_id: call.id ?? call.name })
