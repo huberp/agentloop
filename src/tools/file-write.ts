@@ -33,13 +33,21 @@ export const toolDefinition: ToolDefinition = {
   }): Promise<string> => {
     const resolved = resolveSafe(appConfig.workspaceRoot, filePath);
 
-    // Ensure parent directories exist before writing.
-    await fs.mkdir(path.dirname(resolved), { recursive: true });
-
+    // Decode content to a buffer first so we can check its byte size
     const buffer =
       encoding === "base64"
         ? Buffer.from(content, "base64")
         : Buffer.from(content, "utf-8");
+
+    // Enforce MAX_FILE_SIZE_BYTES before writing
+    if (buffer.byteLength > appConfig.maxFileSizeBytes) {
+      throw new Error(
+        `Content is ${buffer.byteLength} bytes which exceeds the maximum allowed size of ${appConfig.maxFileSizeBytes} bytes`
+      );
+    }
+
+    // Ensure parent directories exist before writing.
+    await fs.mkdir(path.dirname(resolved), { recursive: true });
 
     await fs.writeFile(resolved, buffer);
 

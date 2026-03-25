@@ -2,6 +2,8 @@ import { z } from "zod";
 import { execFile } from "child_process";
 import type { ToolDefinition } from "./registry";
 import { appConfig } from "../config";
+import { resolveSafe } from "./file-utils";
+import { detectShellInjection, truncateOutput } from "./sanitize";
 
 /** Built-in blocked command patterns checked against the full command string before execution. */
 const DEFAULT_COMMAND_BLOCKLIST = [
@@ -65,11 +67,37 @@ export const toolDefinition: ToolDefinition = {
       return JSON.stringify(result);
     }
 
+    // Reject commands that contain shell injection metacharacters
+    if (detectShellInjection(command)) {
+      const result: ShellResult = {
+        stdout: "",
+        stderr: `Command blocked: shell injection metacharacters detected in "${command}"`,
+        exitCode: -1,
+      };
+      return JSON.stringify(result);
+    }
+
     // Split into executable + args — execFile never invokes a shell
     const [executable, ...args] = command.trim().split(/\s+/);
 
     if (!executable) {
       return JSON.stringify({ stdout: "", stderr: "No command provided", exitCode: -1 } as ShellResult);
+    }
+
+    // Confine the working directory to the workspace root (path traversal prevention)
+    let effectiveCwd: string;
+    if (cwd) {
+      try {
+        effectiveCwd = resolveSafe(appConfig.workspaceRoot, cwd);
+      } catch {
+        return JSON.stringify({
+          stdout: "",
+          stderr: `Working directory "${cwd}" is outside the workspace root`,
+          exitCode: -1,
+        } as ShellResult);
+      }
+    } else {
+      effectiveCwd = process.cwd();
     }
 
     const effectiveTimeout = timeout ?? appConfig.toolTimeoutMs;
@@ -79,7 +107,7 @@ export const toolDefinition: ToolDefinition = {
         executable,
         args,
         {
-          cwd: cwd ?? process.cwd(),
+          cwd: effectiveCwd,
           env: { ...process.env, ...env },
           timeout: effectiveTimeout,
         },
@@ -100,7 +128,11 @@ export const toolDefinition: ToolDefinition = {
           const exitCode =
             error === null ? 0 : typeof error.code === "number" ? error.code : 1;
 
-          resolve(JSON.stringify({ stdout, stderr, exitCode } as ShellResult));
+          // Cap stdout and stderr to MAX_SHELL_OUTPUT_BYTES each
+          const cappedStdout = truncateOutput(stdout, appConfig.maxShellOutputBytes);
+          const cappedStderr = truncateOutput(stderr, appConfig.maxShellOutputBytes);
+
+          resolve(JSON.stringify({ stdout: cappedStdout, stderr: cappedStderr, exitCode } as ShellResult));
         }
       );
     });

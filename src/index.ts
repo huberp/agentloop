@@ -12,7 +12,7 @@ import { countTokens, trimMessages } from "./context";
 import { withRetry, invokeWithTimeout } from "./retry";
 import { ToolExecutionError, ToolBlockedError } from "./errors";
 import { ToolRegistry } from "./tools/registry";
-import { ToolPermissionManager } from "./security";
+import { ToolPermissionManager, ConcurrencyLimiter } from "./security";
 import { analyzeWorkspace, type WorkspaceInfo } from "./workspace";
 import { registerMcpTools } from "./mcp/bridge";
 import {
@@ -33,6 +33,9 @@ const permissionManager = new ToolPermissionManager({
   toolAllowlist: appConfig.toolAllowlist,
   toolBlocklist: appConfig.toolBlocklist,
 });
+
+// Concurrency limiter: caps simultaneous tool executions (0 = unlimited)
+const concurrencyLimiter = new ConcurrencyLimiter(appConfig.maxConcurrentTools);
 
 // LLM bound with tools — set during ensureInitialized() before first use
 let _llmWithTools: Runnable<BaseLanguageModelInput, AIMessageChunk> | null = null;
@@ -217,11 +220,13 @@ async function executeWithTools(input: string) {
             await permissionManager.checkPermission(definition, call.args);
           }
 
-          // Enforce per-tool timeout; on expiry ToolExecutionError is thrown
-          const rawOutput = await invokeWithTimeout(
-            selectedTool.invoke(call.args),
-            call.name,
-            appConfig.toolTimeoutMs
+          // Enforce per-tool timeout and concurrency limit; on expiry ToolExecutionError is thrown
+          const rawOutput = await concurrencyLimiter.run(() =>
+            invokeWithTimeout(
+              selectedTool.invoke(call.args),
+              call.name,
+              appConfig.toolTimeoutMs
+            )
           );
           content = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
           logger.info(
@@ -294,6 +299,7 @@ async function* executeWithToolsStream(input: string): AsyncGenerator<string> {
     maxIterations: appConfig.maxIterations,
     maxContextTokens: appConfig.maxContextTokens,
     toolTimeoutMs: appConfig.toolTimeoutMs,
+    concurrencyLimiter,
   });
 }
 
