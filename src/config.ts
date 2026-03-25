@@ -75,6 +75,8 @@ export const appConfig = {
   // MCP client integration (Task 2.8): JSON array of server configs
   // Each entry: { name, transport, command?, args?, url? }
   mcpServers: parseMcpServers(process.env.MCP_SERVERS),
+  // Streaming response support (Task 4.2): print tokens as they arrive in the CLI
+  streamingEnabled: asBoolean(process.env.STREAMING_ENABLED, false),
   // Observability & Tracing (Task 4.1)
   tracingEnabled: asBoolean(process.env.TRACING_ENABLED, false),
   // Directory where per-invocation trace JSON files are written

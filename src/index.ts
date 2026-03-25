@@ -21,6 +21,7 @@ import {
   createTracer,
   newInvocationId,
 } from "./observability";
+import { streamWithTools } from "./streaming";
 
 // Instantiate the LLM and tool registry at module level
 const llm = createLLM(appConfig);
@@ -268,9 +269,42 @@ async function executeWithTools(input: string) {
   }
 }
 
+/**
+ * Streaming variant of executeWithTools.
+ * Builds the dependency object from module-level state and delegates to streamWithTools.
+ */
+async function* executeWithToolsStream(input: string): AsyncGenerator<string> {
+  await ensureInitialized();
+
+  if (!_workspaceInfo) {
+    _workspaceInfo = await analyzeWorkspace(appConfig.workspaceRoot);
+  }
+
+  const systemMessage = new SystemMessage(
+    await getSystemPrompt({ tools: toolRegistry.list().map((t) => t.name), workspace: _workspaceInfo })
+  );
+
+  yield* streamWithTools(input, {
+    llmWithTools: _llmWithTools!,
+    toolRegistry,
+    permissionManager,
+    chatHistory,
+    systemMessage,
+    tracer: getTracer(),
+    maxIterations: appConfig.maxIterations,
+    maxContextTokens: appConfig.maxContextTokens,
+    toolTimeoutMs: appConfig.toolTimeoutMs,
+  });
+}
+
 // Export the executor for testing
 export const agentExecutor = {
   invoke: executeWithTools,
+  /**
+   * Streaming variant: yields text chunks as they arrive from the LLM.
+   * Tool calls are buffered until complete, executed, and then streaming resumes.
+   */
+  stream: executeWithToolsStream,
 };
 
 // Main loop
@@ -293,8 +327,17 @@ async function main() {
     }
 
     try {
-      const result = await agentExecutor.invoke(input);
-      console.log("Agent:", result.output);
+      if (appConfig.streamingEnabled) {
+        // Print tokens as they arrive, then add a newline after the full response
+        process.stdout.write("Agent: ");
+        for await (const chunk of agentExecutor.stream(input)) {
+          process.stdout.write(chunk);
+        }
+        process.stdout.write("\n");
+      } else {
+        const result = await agentExecutor.invoke(input);
+        console.log("Agent:", result.output);
+      }
     } catch (error) {
       console.error("Error:", error);
     }

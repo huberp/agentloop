@@ -79,6 +79,31 @@ You can change logging behavior with environment variables:
 - `LOG_NAME` (logger name field)
 - `LOG_TIMESTAMP` (`true` or `false`)
 
+## Streaming
+
+Set `STREAMING_ENABLED=true` to enable streaming mode.  In this mode the CLI
+prints each token as it arrives from the LLM instead of waiting for the full
+response before printing.
+
+Tool calls are automatically handled during streaming: partial `ToolCallChunk`
+messages are buffered per-index until each call is fully assembled, the tool is
+executed, and streaming resumes for the next LLM turn.
+
+The programmatic API exposes both modes:
+
+```ts
+// Non-streaming (default) – returns the full output once complete
+const { output } = await agentExecutor.invoke("What is 2+2?");
+
+// Streaming – yields text chunks incrementally via an AsyncGenerator
+for await (const chunk of agentExecutor.stream("What is 2+2?")) {
+  process.stdout.write(chunk);
+}
+```
+
+The streaming loop lives in `src/streaming.ts` and is wired into `src/index.ts`
+via an `executeWithToolsStream` wrapper.
+
 ## LLM Provider
 
 The LLM is configured via `src/llm.ts`, which exports a `createLLM(config)` factory used by `src/index.ts`.
