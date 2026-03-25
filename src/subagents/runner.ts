@@ -9,16 +9,35 @@ import { ToolRegistry } from "../tools/registry";
 import type { SubagentDefinition, SubagentResult } from "./types";
 
 /**
+ * Render shared context as a read-only JSON block for inclusion in system prompts.
+ * Returns an empty string when the context is absent or empty.
+ */
+function formatSharedContext(sharedContext?: Record<string, unknown>): string {
+  if (!sharedContext || Object.keys(sharedContext).length === 0) return "";
+  return (
+    `\n\n--- Shared Context (read-only) ---\n` +
+    `${JSON.stringify(sharedContext, null, 2)}\n` +
+    `--- End Shared Context ---`
+  );
+}
+
+/**
  * Build a minimal default system prompt for a subagent when no custom prompt
  * is provided via `SubagentDefinition.systemPrompt`.
+ * Appends any shared context as a read-only JSON block.
  */
-function buildDefaultSystemPrompt(name: string, tools: string[]): string {
+function buildDefaultSystemPrompt(
+  name: string,
+  tools: string[],
+  sharedContext?: Record<string, unknown>
+): string {
   const toolList =
     tools.length > 0 ? `Available tools: ${tools.join(", ")}.` : "No tools available.";
   return (
     `You are a specialized AI subagent named "${name}".\n` +
     `${toolList}\n` +
-    `Be concise and focused on your assigned task.`
+    `Be concise and focused on your assigned task.` +
+    formatSharedContext(sharedContext)
   );
 }
 
@@ -64,10 +83,16 @@ export async function runSubagent(
 
   const systemMessage = new SystemMessage(
     definition.systemPrompt ??
-      buildDefaultSystemPrompt(definition.name, filteredRegistry.list().map((t) => t.name))
+      buildDefaultSystemPrompt(
+        definition.name,
+        filteredRegistry.list().map((t) => t.name),
+        definition.sharedContext
+      )
   );
 
   let iteration = 0;
+  // Accumulates file paths mutated by tool calls in this run
+  const filesModified: string[] = [];
 
   while (true) {
     iteration++;
@@ -89,7 +114,7 @@ export async function runSubagent(
       // Subagent finished — extract and return the final text response
       const output =
         typeof response.content === "string" ? response.content : JSON.stringify(response.content);
-      return { name: definition.name, output, iterations: iteration };
+      return { name: definition.name, output, iterations: iteration, filesModified };
     }
 
     if (iteration >= definition.maxIterations) {
@@ -104,6 +129,7 @@ export async function runSubagent(
         name: definition.name,
         output: `[Warning: Maximum iterations reached] ${output}`,
         iterations: iteration,
+        filesModified,
       };
     }
 
@@ -119,6 +145,11 @@ export async function runSubagent(
         try {
           const rawOutput = await selectedTool.invoke(call.args);
           content = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
+
+          // Track file mutations for conflict detection in runParallel
+          const toolDef = filteredRegistry.getDefinition(call.name);
+          const mutatedFile = toolDef?.mutatesFile?.(call.args as Record<string, unknown>);
+          if (mutatedFile) filesModified.push(mutatedFile);
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           content = `Tool error: ${msg}`;

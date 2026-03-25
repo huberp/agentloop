@@ -17,6 +17,11 @@ export interface ToolDefinition {
   permissions?: "safe" | "cautious" | "dangerous";
   /** Per-tool timeout override in milliseconds (falls back to global TOOL_TIMEOUT_MS). */
   timeout?: number;
+  /**
+   * Optional: return the file path mutated by this tool given the call arguments.
+   * Used by SubagentManager.runParallel to detect write conflicts across parallel subagents.
+   */
+  mutatesFile?: (args: Record<string, unknown>) => string | undefined;
 }
 
 /** Internal registry entry: holds the original definition and its LangChain wrapper. */

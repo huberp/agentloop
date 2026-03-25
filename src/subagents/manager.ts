@@ -3,7 +3,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { logger } from "../logger";
 import { ToolRegistry } from "../tools/registry";
 import { runSubagent } from "./runner";
-import type { SubagentDefinition, SubagentResult } from "./types";
+import type { SubagentDefinition, SubagentResult, ParallelTask, ParallelResult, ConflictInfo } from "./types";
 
 /**
  * Manages subagent execution with a configurable concurrency limit.
@@ -46,6 +46,54 @@ export class SubagentManager {
     } finally {
       this.release();
     }
+  }
+
+  /**
+   * Run multiple subagents in parallel using Promise.allSettled.
+   *
+   * The concurrency limit is still enforced — tasks beyond the limit queue
+   * behind running ones and start automatically as slots become available.
+   * After all tasks settle, overlapping file mutations are flagged as conflicts.
+   *
+   * @param tasks  Array of { definition, task } pairs to execute concurrently.
+   * @returns Aggregated results plus any detected file-write conflicts.
+   */
+  async runParallel(tasks: ParallelTask[]): Promise<ParallelResult> {
+    // Fire all subagents concurrently; acquire/release enforces the concurrency cap
+    const settled = await Promise.allSettled(
+      tasks.map(({ definition, task }) => this.run(definition, task))
+    );
+
+    // Map each settled outcome to a result entry
+    const results: ParallelResult["results"] = settled.map((outcome, i) => {
+      if (outcome.status === "fulfilled") return outcome.value;
+      return {
+        name: tasks[i].definition.name,
+        error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+      };
+    });
+
+    // Detect conflicts: files modified by more than one subagent
+    const fileToAgents = new Map<string, string[]>();
+    for (const result of results) {
+      if ("filesModified" in result) {
+        for (const file of result.filesModified) {
+          const agents = fileToAgents.get(file) ?? [];
+          agents.push(result.name);
+          fileToAgents.set(file, agents);
+        }
+      }
+    }
+
+    const conflicts: ConflictInfo[] = [];
+    for (const [file, agents] of fileToAgents) {
+      if (agents.length > 1) {
+        conflicts.push({ file, agents });
+        logger.warn({ file, agents }, "File conflict detected in parallel subagents");
+      }
+    }
+
+    return { results, conflicts };
   }
 
   /** Wait until a concurrency slot is available, then claim it. */
