@@ -75,6 +75,14 @@ export const appConfig = {
   // MCP client integration (Task 2.8): JSON array of server configs
   // Each entry: { name, transport, command?, args?, url? }
   mcpServers: parseMcpServers(process.env.MCP_SERVERS),
+  // Observability & Tracing (Task 4.1)
+  tracingEnabled: asBoolean(process.env.TRACING_ENABLED, false),
+  // Directory where per-invocation trace JSON files are written
+  traceOutputDir: process.env.TRACE_OUTPUT_DIR ?? "./traces",
+  // USD cost per input (prompt) token — used for cost estimation (0 = disabled)
+  tracingCostPerInputTokenUsd: parseFloat(process.env.TRACING_COST_PER_INPUT_TOKEN_USD ?? "0") || 0,
+  // USD cost per output (completion) token — used for cost estimation (0 = disabled)
+  tracingCostPerOutputTokenUsd: parseFloat(process.env.TRACING_COST_PER_OUTPUT_TOKEN_USD ?? "0") || 0,
   logger: {
     level: process.env.LOG_LEVEL ?? "info",
     enabled: asBoolean(process.env.LOG_ENABLED, true),
