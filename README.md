@@ -69,10 +69,41 @@ for await (const chunk of agentExecutor.stream("What files changed recently?")) 
 
 | Command | Description |
 |---|---|
-| `npm run start` | Start the interactive CLI agent |
+| `npm run start` | Start the interactive CLI agent (dev mode via tsx) |
+| `npm run build` | Compile TypeScript to `dist/` |
+| `npm run build:clean` | Remove `dist/` then compile |
+| `npm run start:prod` | Start the agent from compiled `dist/` |
 | `npm test` | Run the full unit/integration test suite (no API key needed) |
 | `npm run test:e2e` | Run end-to-end scenarios |
 | `npm run bench` | Run performance benchmarks |
+| `npm run bench:profile` | Run benchmarks with Node.js `--prof` for CPU profiling |
+
+## Deployment
+
+### Docker
+
+```bash
+docker build -t agentloop .
+docker run -it -e MISTRAL_API_KEY=your_key agentloop
+```
+
+The image uses a multi-stage build (`node:20-alpine`) — the final image contains only the compiled `dist/` and production dependencies.
+
+### npm package
+
+The package is published as `@huberp/agentloop`. To use it programmatically:
+
+```bash
+npm install @huberp/agentloop
+```
+
+### CI/CD
+
+A GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and pull request:
+1. **test** — `npm ci` + `npm test`
+2. **build** — `npm run build`, uploads `dist/` as an artifact
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## License
 
