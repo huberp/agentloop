@@ -32,26 +32,26 @@ The main loop in `src/index.ts` follows this sequence on every invocation:
 ```mermaid
 sequenceDiagram
     participant User
-    participant Loop as Agent Loop
+    participant AL as Agent Loop
     participant LLM
     participant Tool as Tool(s)
 
-    User->>Loop: executeWithTools(input)
-    Loop->>Loop: ensureInitialized()
-    Loop->>Loop: build SystemMessage + trim context
+    User->>AL: executeWithTools(input)
+    AL->>AL: ensureInitialized()
+    AL->>AL: build SystemMessage + trim context
     loop Until no tool_calls or MAX_ITERATIONS
-        Loop->>LLM: invoke(messages)
-        LLM-->>Loop: AIMessage
+        AL->>LLM: invoke(messages)
+        LLM-->>AL: AIMessage
         alt has tool_calls
             loop For each tool call
-                Loop->>Tool: checkPermission + invoke
-                Tool-->>Loop: ToolMessage
+                AL->>Tool: checkPermission + invoke
+                Tool-->>AL: ToolMessage
             end
         else no tool_calls
-            Loop-->>User: { output }
+            AL-->>User: { output }
         end
     end
-    Loop-->>User: { output } (MAX_ITERATIONS warning)
+    AL-->>User: { output } (MAX_ITERATIONS warning)
 ```
 
 **Key behaviours:**
