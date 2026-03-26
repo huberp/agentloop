@@ -58,6 +58,7 @@ for await (const chunk of agentExecutor.stream("What files changed recently?")) 
 | Doc | Contents |
 |---|---|
 | [docs/getting-started.md](docs/getting-started.md) | Installation, first run, example workflows |
+| [docs/usage.md](docs/usage.md) | Subagents, planner, orchestrator, parallel execution examples |
 | [docs/architecture.md](docs/architecture.md) | System overview, agent loop flow, Mermaid diagrams |
 | [docs/tools.md](docs/tools.md) | Catalog of all 16 built-in tools with inputs, outputs, and examples |
 | [docs/configuration.md](docs/configuration.md) | All 43 environment variables with defaults and descriptions |

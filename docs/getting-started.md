@@ -132,6 +132,7 @@ AgentLoop connects at startup and registers all tools provided by the server. Se
 
 ## 8. Next Steps
 
+- [usage.md](usage.md) — subagents, planner, orchestrator, and parallel execution examples
 - [tools.md](tools.md) — catalog of every built-in tool
 - [configuration.md](configuration.md) — all environment variables and defaults
 - [extending.md](extending.md) — add custom tools, subagents, and MCP servers
