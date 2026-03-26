@@ -4,6 +4,7 @@ import * as path from "path";
 import type { ToolDefinition } from "./registry";
 import { appConfig } from "../config";
 import { resolveSafe } from "./file-utils";
+import { runInDocker, mapHostPathToContainer } from "../sandbox/docker";
 
 /** Execution modes supported by the code-run tool. */
 type ExecutionMode = "command" | "file";
@@ -90,7 +91,7 @@ export const toolDefinition: ToolDefinition = {
     "the command string is split by whitespace — arguments containing spaces are not supported). " +
     "In 'file' mode, runs a script file with an explicit or auto-detected interpreter. " +
     "Returns stdout, stderr, and exit code as JSON. " +
-    `Execution environment: ${appConfig.executionEnvironment}.`,
+    `Execution environment: ${appConfig.sandboxMode === "docker" ? "Docker container (isolated sandbox)" : appConfig.executionEnvironment}.`,
   schema,
   permissions: "dangerous",
   execute: async ({
@@ -153,6 +154,25 @@ export const toolDefinition: ToolDefinition = {
       }
       executable = resolvedInterpreter;
       args = [file];
+    }
+
+    // When SANDBOX_MODE=docker, delegate execution to an isolated Docker container
+    if (appConfig.sandboxMode === "docker") {
+      // In file mode the script path must be remapped from host path to container path
+      const containerArgs =
+        mode === "file"
+          ? args.map((a) => mapHostPathToContainer(a, appConfig.workspaceRoot) ?? a)
+          : args;
+      const sandboxResult = await runInDocker({
+        executable,
+        args: containerArgs,
+        cwd: effectiveCwd,
+        env: env ?? {},
+        timeout: effectiveTimeout,
+        workspaceRoot: appConfig.workspaceRoot,
+        image: appConfig.sandboxDockerImage,
+      });
+      return JSON.stringify(sandboxResult);
     }
 
     const result = await spawnCaptured(executable, args, {
