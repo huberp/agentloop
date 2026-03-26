@@ -83,6 +83,19 @@ function spawnCaptured(
   });
 }
 
+/**
+ * Resolve the executable and args for a command string, accounting for platform.
+ * On Windows, dispatches through cmd.exe /c so shell built-ins work.
+ * On POSIX, splits by whitespace and passes directly to execFile (no shell spawned).
+ */
+function resolveCommandArgs(command: string): [string, string[]] {
+  if (process.platform === "win32") {
+    return ["cmd.exe", ["/c", command.trim()]];
+  }
+  const [exe, ...rest] = command.trim().split(/\s+/);
+  return [exe, rest];
+}
+
 export const toolDefinition: ToolDefinition = {
   name: "code_run",
   description:
@@ -134,11 +147,11 @@ export const toolDefinition: ToolDefinition = {
     let args: string[];
 
     if (mode === "command") {
-      // Delegate to direct execFile — no shell; split command by whitespace
+      // Dispatch through platform-appropriate executor
       if (!command?.trim()) {
         return JSON.stringify({ stdout: "", stderr: "No command provided", exitCode: -1 } as CodeRunResult);
       }
-      [executable, ...args] = command.trim().split(/\s+/);
+      [executable, args] = resolveCommandArgs(command);
     } else {
       // mode === "file"
       if (!file?.trim()) {

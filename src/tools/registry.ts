@@ -114,3 +114,6 @@ export class ToolRegistry {
     }
   }
 }
+
+/** Module-level singleton shared across the application. */
+export const toolRegistry = new ToolRegistry();

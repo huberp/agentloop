@@ -20,6 +20,8 @@ const SHELL_INJECTION_PATTERNS: RegExp[] = [
   /\$\(/,     // $( ) command substitution
   /\n/,       // newline as command separator
   /\r/,       // carriage return as command separator
+  />/,        // stdout redirection (interpreted by cmd.exe on Windows)
+  /</,        // stdin redirection (interpreted by cmd.exe on Windows)
 ];
 
 /**

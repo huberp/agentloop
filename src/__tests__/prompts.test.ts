@@ -5,7 +5,13 @@ import type { WorkspaceInfo } from "../workspace";
 
 // Mock appConfig so tests don't require a real .env file
 jest.mock("../config", () => ({
-  appConfig: { systemPromptPath: "" },
+  appConfig: {
+    systemPromptPath: "",
+    logger: { level: "silent", enabled: false, destination: "stdout", name: "test", timestamp: false },
+  },
+}));
+jest.mock("../logger", () => ({
+  logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
 import { getSystemPrompt } from "../prompts/system";

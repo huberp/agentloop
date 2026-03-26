@@ -28,8 +28,8 @@ describe("shell tool — (a) successful command", () => {
     await fs.rm(workspace, { recursive: true, force: true });
   });
 
-  it("returns stdout and exitCode 0 for 'echo hello'", async () => {
-    const raw = await toolDefinition.execute({ command: "echo hello" });
+  it("returns stdout and exitCode 0 for a simple echo command", async () => {
+    const raw = await toolDefinition.execute({ command: "node -e process.stdout.write('hello\\n')" });
     const result = parseResult(raw);
 
     expect(result.stdout.trim()).toBe("hello");
@@ -42,7 +42,7 @@ describe("shell tool — (a) successful command", () => {
     const subdir = path.join(workspace, "subdir");
     await fs.mkdir(subdir, { recursive: true });
 
-    const raw = await toolDefinition.execute({ command: "pwd", cwd: "subdir" });
+    const raw = await toolDefinition.execute({ command: "node -e console.log(process.cwd())", cwd: "subdir" });
     const result = parseResult(raw);
 
     expect(result.exitCode).toBe(0);
@@ -50,7 +50,7 @@ describe("shell tool — (a) successful command", () => {
   });
 
   it("rejects a cwd that escapes the workspace root", async () => {
-    const raw = await toolDefinition.execute({ command: "pwd", cwd: "../../tmp" });
+    const raw = await toolDefinition.execute({ command: "node -e console.log(process.cwd())", cwd: "../../tmp" });
     const result = parseResult(raw);
 
     expect(result.exitCode).toBe(-1);
@@ -58,9 +58,9 @@ describe("shell tool — (a) successful command", () => {
   });
 
   it("merges extra environment variables into the process", async () => {
-    // printenv reads directly from the process environment — no shell needed
+    // node reads the env var directly — works on all platforms
     const raw = await toolDefinition.execute({
-      command: "printenv AGENTLOOP_TEST_VAR",
+      command: "node -e console.log(process.env.AGENTLOOP_TEST_VAR)",
       env: { AGENTLOOP_TEST_VAR: "hello_env" },
     });
     const result = parseResult(raw);
@@ -71,17 +71,18 @@ describe("shell tool — (a) successful command", () => {
 });
 
 describe("shell tool — (b) failing command", () => {
-  it("returns non-zero exitCode and stderr for a failing command", async () => {
-    // 'false' always exits with code 1 on POSIX systems
-    const raw = await toolDefinition.execute({ command: "false" });
+  it("returns non-zero exitCode for a command that exits with failure", async () => {
+    const raw = await toolDefinition.execute({ command: "node -e process.exit(1)" });
     const result = parseResult(raw);
 
     expect(result.exitCode).not.toBe(0);
   });
 
   it("returns stderr content for a command that writes to stderr", async () => {
-    // ls on a non-existent path writes an error to stderr and exits non-zero
-    const raw = await toolDefinition.execute({ command: "ls /path/does/not/exist/xyz123" });
+    // Use node to write to stderr and exit non-zero — works on all platforms
+    const raw = await toolDefinition.execute({
+      command: "node -e process.stderr.write('error\\n');process.exit(1)",
+    });
     const result = parseResult(raw);
 
     expect(result.exitCode).not.toBe(0);
@@ -124,7 +125,7 @@ describe("shell tool — (c) blocked command", () => {
   });
 
   it("allows benign commands not on the blocklist", async () => {
-    const raw = await toolDefinition.execute({ command: "echo safe" });
+    const raw = await toolDefinition.execute({ command: "node -e process.stdout.write('safe\\n')" });
     const result = parseResult(raw);
 
     expect(result.exitCode).toBe(0);
@@ -133,8 +134,8 @@ describe("shell tool — (c) blocked command", () => {
 
 describe("shell tool — (d) timeout", () => {
   it("kills the process and returns a timeout error when the timeout is exceeded", async () => {
-    // 'sleep 5' exceeds our 100 ms timeout
-    const raw = await toolDefinition.execute({ command: "sleep 5", timeout: 100 });
+    // setTimeout with a long delay exceeds our 100 ms timeout — works on all platforms
+    const raw = await toolDefinition.execute({ command: "node -e setTimeout(function(){},9999)", timeout: 100 });
     const result = parseResult(raw);
 
     expect(result.exitCode).toBe(-1);

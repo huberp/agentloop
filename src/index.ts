@@ -8,12 +8,13 @@ import { logger } from "./logger";
 import { appConfig } from "./config";
 import { createLLM } from "./llm";
 import { getSystemPrompt } from "./prompts/system";
+import { promptRegistry } from "./prompts/registry";
 import { countTokens, trimMessages } from "./context";
 import { withRetry, invokeWithTimeout } from "./retry";
 import { ToolExecutionError, ToolBlockedError } from "./errors";
-import { ToolRegistry } from "./tools/registry";
+import { ToolRegistry, toolRegistry } from "./tools/registry";
 import { ToolPermissionManager, ConcurrencyLimiter } from "./security";
-import { analyzeWorkspace, type WorkspaceInfo } from "./workspace";
+import { getCachedPromptContext } from "./prompts/context";
 import { registerMcpTools } from "./mcp/bridge";
 import {
   type Tracer,
@@ -23,9 +24,11 @@ import {
 } from "./observability";
 import { streamWithTools } from "./streaming";
 
-// Instantiate the LLM and tool registry at module level
+// Re-export the singleton tool registry (created in tools/registry.ts)
+export { toolRegistry };
+
+// Instantiate the LLM at module level
 const llm = createLLM(appConfig);
-export const toolRegistry = new ToolRegistry();
 
 // Permission manager: enforces blocklist/allowlist and dangerous-tool confirmation
 const permissionManager = new ToolPermissionManager({
@@ -42,10 +45,6 @@ let _llmWithTools: Runnable<BaseLanguageModelInput, AIMessageChunk> | null = nul
 
 // Lazy-init promise: loadFromDirectory + bindTools run exactly once
 let _initPromise: Promise<void> | null = null;
-
-// Workspace analysis is cached after the first call; the workspace rarely changes
-// between messages within a single agent session.
-let _workspaceInfo: WorkspaceInfo | null = null;
 
 // Active tracer — defaults to no-op; created lazily from config on first invocation
 let _tracer: Tracer | null = null;
@@ -85,6 +84,12 @@ async function ensureInitialized(): Promise<void> {
           await registerMcpTools(appConfig.mcpServers, toolRegistry);
         }
         _llmWithTools = llm.bindTools!(toolRegistry.toLangChainTools());
+
+        // Load user-supplied prompt templates from configured directory
+        if (appConfig.promptTemplatesDir) {
+          await promptRegistry.loadFromDirectory(appConfig.promptTemplatesDir);
+        }
+        await promptRegistry.loadHistory();
       });
   }
   return _initPromise;
@@ -113,13 +118,14 @@ async function executeWithTools(input: string) {
   const invocationId = newInvocationId();
   getTracer().startInvocation(invocationId, input);
 
-  // Analyse the workspace once per session (cached for subsequent messages)
-  if (!_workspaceInfo) {
-    _workspaceInfo = await analyzeWorkspace(appConfig.workspaceRoot);
-  }
-
+  // Aggregate runtime context: workspace, tools, active instructions (TTL-cached)
+  const promptCtx = await getCachedPromptContext();
   const systemMessage = new SystemMessage(
-    await getSystemPrompt({ tools: toolRegistry.list().map((t) => t.name), workspace: _workspaceInfo })
+    await getSystemPrompt({
+      tools: promptCtx.tools.map((t) => t.name),
+      workspace: promptCtx.workspace,
+      instructions: promptCtx.instructions,
+    })
   );
   let iteration = 0;
 
@@ -281,12 +287,13 @@ async function executeWithTools(input: string) {
 async function* executeWithToolsStream(input: string): AsyncGenerator<string> {
   await ensureInitialized();
 
-  if (!_workspaceInfo) {
-    _workspaceInfo = await analyzeWorkspace(appConfig.workspaceRoot);
-  }
-
+  const promptCtx = await getCachedPromptContext();
   const systemMessage = new SystemMessage(
-    await getSystemPrompt({ tools: toolRegistry.list().map((t) => t.name), workspace: _workspaceInfo })
+    await getSystemPrompt({
+      tools: promptCtx.tools.map((t) => t.name),
+      workspace: promptCtx.workspace,
+      instructions: promptCtx.instructions,
+    })
   );
 
   yield* streamWithTools(input, {

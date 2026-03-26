@@ -1,6 +1,8 @@
 import * as fs from "fs/promises";
 import { appConfig } from "../config";
 import type { WorkspaceInfo } from "../workspace";
+import type { InstructionBlock } from "../instructions/loader";
+import { promptRegistry } from "./registry";
 
 /** Optional context for prompt generation. */
 export interface SystemPromptContext {
@@ -10,13 +12,41 @@ export interface SystemPromptContext {
   projectInfo?: string;
   /** Workspace analysis result injected so the LLM understands the project. */
   workspace?: WorkspaceInfo;
+  /** Active instruction blocks to append to the prompt. */
+  instructions?: InstructionBlock[];
 }
 
-/**
- * Build the base system prompt from a template.
- * Includes agent identity, available tool names, and behavioral instructions.
- */
-function buildBasePrompt(context: SystemPromptContext): string {
+// ---------------------------------------------------------------------------
+// Default "system" template
+// ---------------------------------------------------------------------------
+
+const SYSTEM_TEMPLATE =
+  `You are a helpful AI assistant agent.` +
+  `{{projectSection}}` +
+  `{{workspaceSection}}\n` +
+  `{{toolList}}\n` +
+  `Always prefer using a tool when it can provide a more accurate or up-to-date answer.\n` +
+  `Be concise, precise, and honest in your responses.` +
+  `{{instructionsSection}}`;
+
+/** Register the built-in system template (idempotent). */
+function ensureSystemTemplateRegistered(): void {
+  if (!promptRegistry.get("system")) {
+    promptRegistry.register({
+      name: "system",
+      description: "Default system prompt for the agent loop",
+      template: SYSTEM_TEMPLATE,
+      variables: ["projectSection", "workspaceSection", "toolList", "instructionsSection"],
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers that turn SystemPromptContext into render-ready variables
+// ---------------------------------------------------------------------------
+
+/** Build the render context from a SystemPromptContext. */
+function buildRenderContext(context: SystemPromptContext): Record<string, string> {
   const toolList =
     context.tools && context.tools.length > 0
       ? `You have access to the following tools: ${context.tools.join(", ")}.`
@@ -26,17 +56,13 @@ function buildBasePrompt(context: SystemPromptContext): string {
     ? `\nProject context: ${context.projectInfo}`
     : "";
 
-  // Format workspace info as a concise context block when provided
   const workspaceSection = context.workspace
     ? buildWorkspaceSection(context.workspace)
     : "";
 
-  return (
-    `You are a helpful AI assistant agent.${projectSection}${workspaceSection}\n` +
-    `${toolList}\n` +
-    `Always prefer using a tool when it can provide a more accurate or up-to-date answer.\n` +
-    `Be concise, precise, and honest in your responses.`
-  );
+  const instructionsSection = buildInstructionsSection(context.instructions);
+
+  return { toolList, projectSection, workspaceSection, instructionsSection };
 }
 
 /** Format a WorkspaceInfo object into a human-readable prompt section. */
@@ -53,12 +79,20 @@ function buildWorkspaceSection(ws: WorkspaceInfo): string {
   return lines.join("\n");
 }
 
+/** Format active instruction blocks into a prompt section. */
+function buildInstructionsSection(instructions?: InstructionBlock[]): string {
+  if (!instructions || instructions.length === 0) return "";
+  const parts = instructions.map((b) => b.body);
+  return "\n\n## Instructions\n\n" + parts.join("\n\n");
+}
+
 /**
  * Return the system prompt to use for the agent.
  *
  * If `SYSTEM_PROMPT_PATH` is configured, the file at that path is read and
  * returned as-is (allows full operator control over the prompt).
- * Otherwise a template-based prompt is generated from the provided context.
+ * Otherwise the "system" template in the prompt registry is rendered
+ * with the provided context.
  */
 export async function getSystemPrompt(context: SystemPromptContext = {}): Promise<string> {
   const promptPath = appConfig.systemPromptPath;
@@ -69,6 +103,7 @@ export async function getSystemPrompt(context: SystemPromptContext = {}): Promis
     return fs.readFile(promptPath, "utf-8");
   }
 
-  return buildBasePrompt(context);
+  ensureSystemTemplateRegistered();
+  return promptRegistry.render("system", buildRenderContext(context));
 }
 

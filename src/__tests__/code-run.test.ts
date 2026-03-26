@@ -96,7 +96,7 @@ describe("code_run tool — (c) timeout enforcement", () => {
   it("kills a long-running command and reports a timeout error", async () => {
     const raw = await toolDefinition.execute({
       mode: "command",
-      command: "sleep 10",
+      command: "node -e setTimeout(function(){},9999)",
       timeout: 100,
     });
     const result = parseResult(raw);

@@ -77,10 +77,7 @@ export const toolDefinition: ToolDefinition = {
       return JSON.stringify(result);
     }
 
-    // Split into executable + args — execFile never invokes a shell
-    const [executable, ...args] = command.trim().split(/\s+/);
-
-    if (!executable) {
+    if (!command.trim()) {
       return JSON.stringify({ stdout: "", stderr: "No command provided", exitCode: -1 } as ShellResult);
     }
 
@@ -101,6 +98,13 @@ export const toolDefinition: ToolDefinition = {
     }
 
     const effectiveTimeout = timeout ?? appConfig.toolTimeoutMs;
+    const isWindows = process.platform === "win32";
+
+    // On Windows dispatch through cmd.exe so shell built-ins work.
+    // On POSIX split by whitespace and pass directly to execFile (no shell spawned).
+    const [executable, args]: [string, string[]] = isWindows
+      ? ["cmd.exe", ["/c", command.trim()]]
+      : (() => { const [exe, ...rest] = command.trim().split(/\s+/); return [exe, rest]; })()
 
     return new Promise<string>((resolve) => {
       execFile(

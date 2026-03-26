@@ -50,6 +50,9 @@
     },
     "testMatch": [
       "**/__tests__/**/*.test.ts"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^@modelcontextprotocol/sdk/(.*)$": "<rootDir>/node_modules/@modelcontextprotocol/sdk/dist/cjs/$1"
+    }
   }
 }

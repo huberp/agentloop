@@ -90,6 +90,14 @@ export const appConfig = {
   sandboxDockerImage: process.env.SANDBOX_DOCKER_IMAGE ?? "node:20-alpine",
   // Streaming response support (Task 4.2): print tokens as they arrive in the CLI
   streamingEnabled: asBoolean(process.env.STREAMING_ENABLED, false),
+  // Instruction files root directory (Task 5.1); defaults to WORKSPACE_ROOT
+  instructionsRoot: process.env.INSTRUCTIONS_ROOT || process.env.WORKSPACE_ROOT || process.cwd(),
+  // Prompt templates directory (Task 5.2); loaded into PromptRegistry on startup
+  promptTemplatesDir: process.env.PROMPT_TEMPLATES_DIR ?? "",
+  // Prompt version history store (Task 5.3); persists all registered prompt versions across restarts
+  promptHistoryFile: process.env.PROMPT_HISTORY_FILE ?? "",
+  // Dynamic context injection TTL (Task 5.4): ms before context is re-built (0 = every call)
+  promptContextRefreshMs: parseInt(process.env.PROMPT_CONTEXT_REFRESH_MS ?? "5000", 10),
   // Observability & Tracing (Task 4.1)
   tracingEnabled: asBoolean(process.env.TRACING_ENABLED, false),
   // Directory where per-invocation trace JSON files are written
