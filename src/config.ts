@@ -84,6 +84,10 @@ export const appConfig = {
   maxConcurrentTools: parseInt(process.env.MAX_CONCURRENT_TOOLS ?? "10", 10),
   // Comma-separated allowlist of domains/IPs permitted for network tool requests (empty = allow all)
   networkAllowedDomains: asStringArray(process.env.NETWORK_ALLOWED_DOMAINS),
+  // Execution sandboxing (Task 4.4): "none" runs code on the host; "docker" isolates it in a container
+  sandboxMode: (process.env.SANDBOX_MODE ?? "none") as "none" | "docker",
+  // Docker image used when SANDBOX_MODE=docker (must contain the required interpreter)
+  sandboxDockerImage: process.env.SANDBOX_DOCKER_IMAGE ?? "node:20-alpine",
   // Streaming response support (Task 4.2): print tokens as they arrive in the CLI
   streamingEnabled: asBoolean(process.env.STREAMING_ENABLED, false),
   // Observability & Tracing (Task 4.1)
