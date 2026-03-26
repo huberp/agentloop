@@ -3,6 +3,7 @@ import { appConfig } from "../config";
 import type { WorkspaceInfo } from "../workspace";
 import type { InstructionBlock } from "../instructions/loader";
 import { promptRegistry } from "./registry";
+import type { ActiveSkillFragment } from "../skills/registry";
 
 /** Optional context for prompt generation. */
 export interface SystemPromptContext {
@@ -14,6 +15,8 @@ export interface SystemPromptContext {
   workspace?: WorkspaceInfo;
   /** Active instruction blocks to append to the prompt. */
   instructions?: InstructionBlock[];
+  /** Active skill fragments to inject into the rendered prompt. */
+  skills?: ActiveSkillFragment[];
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +107,7 @@ export async function getSystemPrompt(context: SystemPromptContext = {}): Promis
   }
 
   ensureSystemTemplateRegistered();
-  return promptRegistry.render("system", buildRenderContext(context));
+  const skillFragments = context.skills ?? [];
+  return promptRegistry.render("system", buildRenderContext(context), skillFragments);
 }
 

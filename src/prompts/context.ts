@@ -1,7 +1,10 @@
+import * as fs from "fs/promises";
 import { appConfig } from "../config";
 import { analyzeWorkspace, type WorkspaceInfo } from "../workspace";
 import { loadInstructions, type InstructionBlock } from "../instructions/loader";
 import { toolRegistry } from "../tools/registry";
+import { skillRegistry, type ActiveSkillFragment } from "../skills/registry";
+import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -18,7 +21,10 @@ export interface PromptContext {
   instructions: InstructionBlock[];
   historyDigest: string;
   timestamp: string;
+  skills: ActiveSkillFragment[];
 }
+
+export type { ActiveSkillFragment };
 
 /** A function that supplies a partial PromptContext. Must be a pure function. */
 export type ContextProvider = () => Promise<Partial<PromptContext>>;
@@ -70,6 +76,7 @@ export async function buildPromptContext(): Promise<PromptContext> {
     instructions: [],
     historyDigest: "",
     timestamp: new Date().toISOString(),
+    skills: [],
   };
 
   const partials = await Promise.all(providers.map((p) => p()));
@@ -80,6 +87,7 @@ export async function buildPromptContext(): Promise<PromptContext> {
     if (partial.instructions !== undefined)
       result.instructions = [...result.instructions, ...partial.instructions];
     if (partial.historyDigest !== undefined) result.historyDigest = partial.historyDigest;
+    if (partial.skills !== undefined) result.skills = [...result.skills, ...partial.skills];
   }
 
   return result;
@@ -133,4 +141,30 @@ registerContextProvider(async () => {
 registerContextProvider(async () => {
   const set = await loadInstructions(appConfig.instructionsRoot);
   return { instructions: set.getActive() };
+});
+
+// 4. Active skill fragments
+registerContextProvider(async () => {
+  const activeSkills = skillRegistry.listActive();
+  const skillFragments: ActiveSkillFragment[] = await Promise.all(
+    activeSkills.map(async (skill) => {
+      let fragment = skill.promptFragment;
+      if (skill.instructions) {
+        try {
+          const instructionContent = await fs.readFile(skill.instructions, "utf-8");
+          fragment = `${fragment}\n\n---\n\n${instructionContent}`;
+        } catch {
+          logger.warn(
+            { skillName: skill.name, instructionsPath: skill.instructions },
+            "Skill instructions file not found",
+          );
+        }
+      }
+      return { name: skill.name, slot: skill.slot, fragment, tools: skill.tools };
+    }),
+  );
+  const toolsFromSkills: ToolSummary[] = skillFragments.flatMap((sf) =>
+    (sf.tools ?? []).map((t) => ({ name: t, description: `Activated by skill: ${sf.name}` })),
+  );
+  return { skills: skillFragments, tools: toolsFromSkills };
 });

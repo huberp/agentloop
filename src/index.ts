@@ -9,6 +9,7 @@ import { appConfig } from "./config";
 import { createLLM } from "./llm";
 import { getSystemPrompt } from "./prompts/system";
 import { promptRegistry } from "./prompts/registry";
+import { skillRegistry } from "./skills/registry";
 import { countTokens, trimMessages } from "./context";
 import { withRetry, invokeWithTimeout } from "./retry";
 import { ToolExecutionError, ToolBlockedError } from "./errors";
@@ -16,6 +17,9 @@ import { ToolRegistry, toolRegistry } from "./tools/registry";
 import { ToolPermissionManager, ConcurrencyLimiter } from "./security";
 import { getCachedPromptContext } from "./prompts/context";
 import { registerMcpTools } from "./mcp/bridge";
+import { agentProfileRegistry } from "./agents/registry";
+import { activateProfile } from "./agents/activator";
+import type { AgentRuntimeConfig } from "./agents/types";
 import {
   type Tracer,
   NoopTracer,
@@ -90,6 +94,17 @@ async function ensureInitialized(): Promise<void> {
           await promptRegistry.loadFromDirectory(appConfig.promptTemplatesDir);
         }
         await promptRegistry.loadHistory();
+        if (appConfig.skillsDir) {
+          await skillRegistry.loadFromDirectory(appConfig.skillsDir);
+        }
+        const builtinSkillsDir = path.join(__dirname, "skills", "builtin");
+        await skillRegistry.loadFromDirectory(builtinSkillsDir);
+        if (appConfig.agentProfilesDir) {
+          await agentProfileRegistry.loadFromDirectory(appConfig.agentProfilesDir);
+        }
+        // Auto-load builtin agent profiles (Task 7.3)
+        const builtinAgentProfilesDir = path.join(__dirname, "agents", "builtin");
+        await agentProfileRegistry.loadFromDirectory(builtinAgentProfilesDir);
       });
   }
   return _initPromise;
@@ -109,10 +124,45 @@ function extractContent(msg: AIMessage): string {
  * Agentic loop: invoke the LLM repeatedly until it returns a response with no
  * tool calls, or until MAX_ITERATIONS is reached.
  */
-async function executeWithTools(input: string) {
+async function executeWithTools(input: string, profileName?: string) {
   // Ensure tools are loaded and LLM is bound on first call
   await ensureInitialized();
   await chatHistory.addMessage(new HumanMessage(input));
+
+  // Resolve agent profile and apply runtime overrides
+  let runtimeConfig: AgentRuntimeConfig | undefined;
+  if (profileName) {
+    const profile = agentProfileRegistry.get(profileName);
+    if (!profile) {
+      logger.warn({ profileName }, "Requested agent profile not found, using defaults");
+    } else {
+      runtimeConfig = activateProfile(profile);
+    }
+  }
+
+  // Determine per-run LLM and tool binding
+  let llmForRun = _llmWithTools!;
+  if (runtimeConfig) {
+    const needsNewLlm =
+      runtimeConfig.model !== undefined || runtimeConfig.temperature !== undefined;
+    const baseLlm = needsNewLlm
+      ? createLLM({
+          ...appConfig,
+          ...(runtimeConfig.model !== undefined && { llmModel: runtimeConfig.model }),
+          ...(runtimeConfig.temperature !== undefined && {
+            llmTemperature: runtimeConfig.temperature,
+          }),
+        })
+      : llm;
+    const allLangChainTools = toolRegistry.toLangChainTools();
+    const toolsForRun =
+      runtimeConfig.activeTools.length > 0
+        ? allLangChainTools.filter((t) => runtimeConfig!.activeTools.includes(t.name))
+        : allLangChainTools;
+    llmForRun = baseLlm.bindTools!(toolsForRun);
+  }
+
+  const effectiveMaxIterations = runtimeConfig?.maxIterations ?? appConfig.maxIterations;
 
   // Start an invocation trace (no-op when tracing is disabled)
   const invocationId = newInvocationId();
@@ -125,6 +175,7 @@ async function executeWithTools(input: string) {
       tools: promptCtx.tools.map((t) => t.name),
       workspace: promptCtx.workspace,
       instructions: promptCtx.instructions,
+      skills: promptCtx.skills,
     })
   );
   let iteration = 0;
@@ -151,7 +202,7 @@ async function executeWithTools(input: string) {
 
     // Wrap the LLM call with retry + exponential back-off (rate-limit aware)
     const response = (await withRetry(
-      () => _llmWithTools!.invoke(trimmed),
+      () => llmForRun.invoke(trimmed),
       { maxRetries: appConfig.llmRetryMax, baseDelayMs: appConfig.llmRetryBaseDelayMs }
     )) as AIMessage;
 
@@ -191,7 +242,7 @@ async function executeWithTools(input: string) {
       return { output: content };
     }
 
-    if (iteration >= appConfig.maxIterations) {
+    if (iteration >= effectiveMaxIterations) {
       // Guard against infinite loops: return last response with a warning
       const content = extractContent(response);
       logger.warn({ iteration }, "MAX_ITERATIONS reached; terminating agent loop");
@@ -284,8 +335,41 @@ async function executeWithTools(input: string) {
  * Streaming variant of executeWithTools.
  * Builds the dependency object from module-level state and delegates to streamWithTools.
  */
-async function* executeWithToolsStream(input: string): AsyncGenerator<string> {
+async function* executeWithToolsStream(input: string, profileName?: string): AsyncGenerator<string> {
   await ensureInitialized();
+
+  // Resolve agent profile and apply runtime overrides
+  let runtimeConfig: AgentRuntimeConfig | undefined;
+  if (profileName) {
+    const profile = agentProfileRegistry.get(profileName);
+    if (!profile) {
+      logger.warn({ profileName }, "Requested agent profile not found, using defaults");
+    } else {
+      runtimeConfig = activateProfile(profile);
+    }
+  }
+
+  // Determine per-run LLM and tool binding
+  let llmWithToolsForRun = _llmWithTools!;
+  if (runtimeConfig) {
+    const needsNewLlm =
+      runtimeConfig.model !== undefined || runtimeConfig.temperature !== undefined;
+    const baseLlm = needsNewLlm
+      ? createLLM({
+          ...appConfig,
+          ...(runtimeConfig.model !== undefined && { llmModel: runtimeConfig.model }),
+          ...(runtimeConfig.temperature !== undefined && {
+            llmTemperature: runtimeConfig.temperature,
+          }),
+        })
+      : llm;
+    const allLangChainTools = toolRegistry.toLangChainTools();
+    const toolsForRun =
+      runtimeConfig.activeTools.length > 0
+        ? allLangChainTools.filter((t) => runtimeConfig!.activeTools.includes(t.name))
+        : allLangChainTools;
+    llmWithToolsForRun = baseLlm.bindTools!(toolsForRun);
+  }
 
   const promptCtx = await getCachedPromptContext();
   const systemMessage = new SystemMessage(
@@ -293,17 +377,18 @@ async function* executeWithToolsStream(input: string): AsyncGenerator<string> {
       tools: promptCtx.tools.map((t) => t.name),
       workspace: promptCtx.workspace,
       instructions: promptCtx.instructions,
+      skills: promptCtx.skills,
     })
   );
 
   yield* streamWithTools(input, {
-    llmWithTools: _llmWithTools!,
+    llmWithTools: llmWithToolsForRun,
     toolRegistry,
     permissionManager,
     chatHistory,
     systemMessage,
     tracer: getTracer(),
-    maxIterations: appConfig.maxIterations,
+    maxIterations: runtimeConfig?.maxIterations ?? appConfig.maxIterations,
     maxContextTokens: appConfig.maxContextTokens,
     toolTimeoutMs: appConfig.toolTimeoutMs,
     concurrencyLimiter,

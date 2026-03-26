@@ -98,6 +98,10 @@ export const appConfig = {
   promptHistoryFile: process.env.PROMPT_HISTORY_FILE ?? "",
   // Dynamic context injection TTL (Task 5.4): ms before context is re-built (0 = every call)
   promptContextRefreshMs: parseInt(process.env.PROMPT_CONTEXT_REFRESH_MS ?? "5000", 10),
+  // Skills directory (Task 6.1); auto-loaded on startup
+  skillsDir: process.env.SKILLS_DIR ?? "",
+  // Agent profiles directory (Task 7.1); auto-loaded on startup
+  agentProfilesDir: process.env.AGENT_PROFILES_DIR ?? "",
   // Observability & Tracing (Task 4.1)
   tracingEnabled: asBoolean(process.env.TRACING_ENABLED, false),
   // Directory where per-invocation trace JSON files are written

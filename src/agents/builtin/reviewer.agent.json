@@ -1,0 +1,10 @@
+{
+  "name": "reviewer",
+  "description": "Code review specialist — reads source, identifies issues, creates review comments",
+  "version": "1.0.0",
+  "temperature": 0.3,
+  "skills": ["code-reviewer"],
+  "tools": ["file-read", "file-list", "code-search", "git-diff", "git-log", "git-status"],
+  "maxIterations": 15,
+  "constraints": {}
+}

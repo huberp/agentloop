@@ -3,6 +3,7 @@ import * as path from "path";
 import { createPatch } from "diff";
 import { logger } from "../logger";
 import { appConfig } from "../config";
+import type { ActiveSkillFragment } from "../skills/registry";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -188,13 +189,35 @@ export class PromptRegistry {
    *
    * - Undefined variables render as empty strings and log a warning.
    * - Unknown partial names render as empty strings and log a warning.
+   * - Skill fragments are applied after interpolation: prepend before body,
+   *   section as titled blocks between body and append, append after body.
    */
-  render(name: string, context: RenderContext = {}): string {
+  render(name: string, context: RenderContext = {}, skillFragments: ActiveSkillFragment[] = []): string {
     const template = this.templates.get(name);
     if (!template) {
       throw new Error(`Prompt template "${name}" not found in registry`);
     }
-    return this.interpolate(template.template, context, template.partials);
+    let result = this.interpolate(template.template, context, template.partials);
+
+    if (skillFragments.length > 0) {
+      const prepend = skillFragments
+        .filter((sf) => sf.slot === "prepend")
+        .map((sf) => sf.fragment)
+        .join("\n\n");
+      const sections = skillFragments
+        .filter((sf) => sf.slot === "section")
+        .map((sf) => `## Skill: ${sf.name}\n\n${sf.fragment}`)
+        .join("\n\n");
+      const append = skillFragments
+        .filter((sf) => sf.slot === "append")
+        .map((sf) => sf.fragment)
+        .join("\n\n");
+
+      const parts = [prepend, result, sections, append].filter((p) => p.length > 0);
+      result = parts.join("\n\n");
+    }
+
+    return result;
   }
 
   /**

@@ -1,0 +1,9 @@
+{
+  "name": "planner",
+  "description": "Strategic planning agent — breaks down goals into tasks, estimates effort, creates roadmaps",
+  "version": "1.0.0",
+  "temperature": 0.7,
+  "tools": ["file-read", "file-write", "file-list", "code-search"],
+  "maxIterations": 10,
+  "constraints": {}
+}
