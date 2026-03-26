@@ -83,6 +83,12 @@ export interface ExecutionOptions {
    * Defaults to a new in-memory store.
    */
   checkpoint?: CheckpointStore;
+  /**
+   * Optional progress callback invoked just before each step begins.
+   * Receives a human-readable message such as "Step 2/7: Write the endpoint handler".
+   * Use this to drive a spinner or status line in the calling layer.
+   */
+  progress?: (message: string) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -217,6 +223,7 @@ export async function executePlan(
     }
 
     logger.info({ step: stepNumber, total, description: step.description }, "Executing step");
+    options.progress?.(`Step ${stepNumber}/${total}: ${step.description}`);
 
     const result = await executeStep(step, i, manager, registry, llm, onStepFailure);
     stepResults.push(result);

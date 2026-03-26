@@ -98,15 +98,17 @@ export async function runSubagent(
     iteration++;
 
     const messages = await chatHistory.getMessages();
+    const llmCallStart = Date.now();
     const response = (await llmWithTools.invoke([
       systemMessage,
       ...messages,
     ])) as AIMessage;
+    const llmDurationMs = Date.now() - llmCallStart;
 
     const toolCalls = response.tool_calls ?? [];
 
     logger.info(
-      { subagent: definition.name, iteration, toolCallCount: toolCalls.length },
+      { subagent: definition.name, iteration, llmDurationMs, toolCallCount: toolCalls.length },
       "Subagent loop iteration"
     );
 

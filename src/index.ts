@@ -27,6 +27,7 @@ import {
   newInvocationId,
 } from "./observability";
 import { streamWithTools } from "./streaming";
+import { Spinner } from "./spinner";
 
 // Re-export the singleton tool registry (created in tools/registry.ts)
 export { toolRegistry };
@@ -224,10 +225,13 @@ async function executeWithTools(input: string, profileName?: string) {
       toolCallCount: toolCalls.length,
     });
 
-    // Structured per-iteration log entry
+    // Structured per-iteration log entry — includes LLM timing and token usage
     logger.info(
       {
         iteration,
+        llmDurationMs: llmCallEnd - llmCallStart,
+        promptTokens,
+        completionTokens,
         toolCallCount: toolCalls.length,
         toolCalls: toolCalls.map((call) => call.name),
       },
@@ -414,6 +418,8 @@ async function main() {
     output: process.stdout,
   });
 
+  const spinner = new Spinner();
+
   console.log("Agent: Hello! I'm ready to help. Type 'exit' to quit.");
 
   while (true) {
@@ -428,17 +434,20 @@ async function main() {
 
     try {
       if (appConfig.streamingEnabled) {
-        // Print tokens as they arrive, then add a newline after the full response
+        // Streaming provides its own token-by-token feedback — no spinner needed.
         process.stdout.write("Agent: ");
         for await (const chunk of agentExecutor.stream(input)) {
           process.stdout.write(chunk);
         }
         process.stdout.write("\n");
       } else {
+        spinner.start("Thinking…");
         const result = await agentExecutor.invoke(input);
+        spinner.stop();
         console.log("Agent:", result.output);
       }
     } catch (error) {
+      spinner.stop();
       console.error("Error:", error);
     }
   }

@@ -68,7 +68,10 @@ export const toolDefinition: ToolDefinition = {
 
     logger.info({ tool: "plan-and-run", steps: plan.steps.length }, "executing plan");
 
-    const result = await executePlan(plan, toolRegistry, { onStepFailure });
+    const result = await executePlan(plan, toolRegistry, {
+      onStepFailure,
+      progress: (msg) => process.stdout.write(`  ↳ ${msg}\n`),
+    });
 
     const lines = result.stepResults.map((s) => {
       const icon = s.status === "success" ? "✓" : s.status === "skipped" ? "–" : "✗";
