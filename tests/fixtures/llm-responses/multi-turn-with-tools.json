@@ -1,0 +1,60 @@
+{
+  "name": "multi-turn-with-tools",
+  "description": "Multi-turn conversation: file read followed by explanation, demonstrating tool call replay across turns",
+  "turns": [
+    {
+      "input": [
+        { "role": "human", "content": "Read file hello.js and tell me what it does" }
+      ],
+      "output": {
+        "role": "ai",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_001",
+            "name": "file-read",
+            "args": { "path": "hello.js" }
+          }
+        ]
+      }
+    },
+    {
+      "input": [
+        { "role": "human", "content": "Read file hello.js and tell me what it does" },
+        { "role": "tool", "content": "console.log('Hello, world!');", "tool_call_id": "call_001" }
+      ],
+      "output": {
+        "role": "ai",
+        "content": "The file hello.js is a simple Node.js script that prints 'Hello, world!' to the console using console.log.",
+        "tool_calls": []
+      }
+    },
+    {
+      "input": [
+        { "role": "human", "content": "Can you also check package.json?" }
+      ],
+      "output": {
+        "role": "ai",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_002",
+            "name": "file-read",
+            "args": { "path": "package.json" }
+          }
+        ]
+      }
+    },
+    {
+      "input": [
+        { "role": "human", "content": "Can you also check package.json?" },
+        { "role": "tool", "content": "{\"name\":\"my-app\",\"version\":\"1.0.0\"}", "tool_call_id": "call_002" }
+      ],
+      "output": {
+        "role": "ai",
+        "content": "The package.json shows this is a Node.js app called 'my-app' at version 1.0.0.",
+        "tool_calls": []
+      }
+    }
+  ]
+}

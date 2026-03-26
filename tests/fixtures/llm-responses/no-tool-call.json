@@ -1,0 +1,16 @@
+{
+  "name": "no-tool-call",
+  "description": "Simple single-turn response with no tool calls",
+  "turns": [
+    {
+      "input": [
+        { "role": "human", "content": "Hello, how are you?" }
+      ],
+      "output": {
+        "role": "ai",
+        "content": "I'm doing well, thank you for asking!",
+        "tool_calls": []
+      }
+    }
+  ]
+}

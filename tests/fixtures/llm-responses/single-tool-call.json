@@ -1,0 +1,33 @@
+{
+  "name": "single-tool-call",
+  "description": "Two-turn exchange: first turn requests a tool call, second returns the final answer",
+  "turns": [
+    {
+      "input": [
+        { "role": "human", "content": "Search for the latest news on TypeScript" }
+      ],
+      "output": {
+        "role": "ai",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_abc123",
+            "name": "search",
+            "args": { "query": "TypeScript latest news" }
+          }
+        ]
+      }
+    },
+    {
+      "input": [
+        { "role": "human", "content": "Search for the latest news on TypeScript" },
+        { "role": "tool", "content": "TypeScript 5.4 released with new features", "tool_call_id": "call_abc123" }
+      ],
+      "output": {
+        "role": "ai",
+        "content": "The latest TypeScript news: TypeScript 5.4 was released with several new features.",
+        "tool_calls": []
+      }
+    }
+  ]
+}
