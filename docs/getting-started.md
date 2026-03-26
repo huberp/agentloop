@@ -96,6 +96,52 @@ User: Calculate (12 * 8) + (3^4)
 Agent: Result of (12 * 8) + (3^4): 177
 ```
 
+### Plan and execute a multi-step task
+
+The `plan-and-run` tool lets you hand a high-level goal to the planner, which
+breaks it into steps and runs each one as an isolated subagent.
+
+```
+User: Plan and run: add a CONTRIBUTING.md that explains the project structure,
+      coding conventions, and how to run the tests
+```
+
+The agent calls `plan-and-run`, which:
+1. Sends the goal to the **planner subagent** — it returns a structured list of
+   steps (read existing docs, draft the file, write it to disk, verify).
+2. Passes the plan to the **orchestrator**, which executes each step in sequence.
+3. Reports per-step success or failure back to the conversation.
+
+```
+Agent: ✓ Step 1: Read README.md and docs/ to understand project structure
+       ✓ Step 2: Draft CONTRIBUTING.md content
+       ✓ Step 3: Write CONTRIBUTING.md to the workspace root
+       ✓ Step 4: Verify the file was created
+
+       Completed successfully.
+```
+
+For larger or riskier tasks you can ask the planner to stop after planning:
+
+```
+User: Generate a plan to refactor the error-handling in src/orchestrator.ts,
+      but don't execute it yet — just show me the steps
+```
+
+```
+Agent: Here is the proposed plan:
+  1. [low]    Read src/orchestrator.ts to understand current error handling
+  2. [medium] Identify steps that swallow errors without logging
+  3. [medium] Rewrite those sections to use the shared logger
+  4. [low]    Run the test suite to confirm no regressions
+```
+
+You can then trigger execution with a follow-up:
+
+```
+User: Looks good. Go ahead and execute it.
+```
+
 ---
 
 ## 5. Enable Streaming (Optional)

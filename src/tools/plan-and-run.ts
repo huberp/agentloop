@@ -24,6 +24,8 @@ export const toolDefinition: ToolDefinition = {
     "then execute each step in sequence. Auto-refines the plan once if unknown tools are referenced.",
   schema,
   permissions: "dangerous",
+  // Planning + multi-step execution spawns many sequential LLM calls; allow up to 30 minutes.
+  timeout: 30 * 60_000,
   execute: async ({ goal, onStepFailure = "retry" }) => {
     logger.info({ tool: "plan-and-run", goal }, "generating plan");
 
@@ -53,6 +55,16 @@ export const toolDefinition: ToolDefinition = {
         );
       }
     }
+
+    // Print the plan to stdout so the user can see what will happen before execution starts.
+    process.stdout.write("\nPlan:\n");
+    for (let i = 0; i < plan.steps.length; i++) {
+      const s = plan.steps[i];
+      process.stdout.write(
+        `  ${i + 1}. [${s.estimatedComplexity}] ${s.description}\n`
+      );
+    }
+    process.stdout.write("\n");
 
     logger.info({ tool: "plan-and-run", steps: plan.steps.length }, "executing plan");
 

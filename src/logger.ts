@@ -1,10 +1,15 @@
 import pino from "pino";
 import { appConfig } from "./config";
 
-const destination =
-  appConfig.logger.destination.toLowerCase() === "stderr"
+function buildDestination() {
+  if (appConfig.logger.file) {
+    // Append to the specified file; pino.destination is synchronous-safe for file paths.
+    return pino.destination({ dest: appConfig.logger.file, append: true, sync: false });
+  }
+  return appConfig.logger.destination.toLowerCase() === "stderr"
     ? pino.destination(2)
     : pino.destination(1);
+}
 
 export const logger = pino(
   {
@@ -13,5 +18,5 @@ export const logger = pino(
     base: undefined,
     timestamp: appConfig.logger.timestamp ? pino.stdTimeFunctions.isoTime : false,
   },
-  destination
+  buildDestination()
 );

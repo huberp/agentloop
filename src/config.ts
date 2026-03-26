@@ -119,6 +119,8 @@ export const appConfig = {
     level: process.env.LOG_LEVEL ?? "info",
     enabled: asBoolean(process.env.LOG_ENABLED, true),
     destination: process.env.LOG_DESTINATION ?? "stdout",
+    // When set, all log output is written to this file path instead of stdout/stderr.
+    file: process.env.LOG_FILE ?? "",
     name: process.env.LOG_NAME ?? "agentloop",
     timestamp: asBoolean(process.env.LOG_TIMESTAMP, true),
   },

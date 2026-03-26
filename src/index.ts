@@ -278,11 +278,13 @@ async function executeWithTools(input: string, profileName?: string) {
           }
 
           // Enforce per-tool timeout and concurrency limit; on expiry ToolExecutionError is thrown
+          // Prefer the per-tool timeout override; fall back to the global TOOL_TIMEOUT_MS.
+          const effectiveTimeout = definition?.timeout ?? appConfig.toolTimeoutMs;
           const rawOutput = await concurrencyLimiter.run(() =>
             invokeWithTimeout(
               selectedTool.invoke(call.args),
               call.name,
-              appConfig.toolTimeoutMs
+              effectiveTimeout
             )
           );
           content = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
