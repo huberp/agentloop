@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "test": "jest",
+    "test:e2e": "jest --config jest.e2e.config.js",
     "start": "npx tsx src/index.ts"
   },
   "keywords": [
