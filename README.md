@@ -1,138 +1,138 @@
 # AgentLoop
 
-A **TypeScript LangChain Agent Loop** using the Mistral LLM API, designed for interactive conversations with tool support. This project is built for direct execution with `tsx`, so no explicit build step is required.
+AgentLoop is a TypeScript-first LangChain runtime for tool-using coding agents.
+It supports iterative tool execution, streaming responses, security controls,
+MCP integration, and optional multi-agent planning/execution components.
 
-## Features
-- **Mistral LLM Integration**: Uses the Mistral API for natural language understanding and generation.
-- **Tool Support**: Extensible tools with native `bindTools` flow and tool-result round trips.
-- **Memory**: Maintains conversation history for context-aware interactions.
-- **Structured Logging**: Uses Pino and logs tool calls, arguments, and tool responses.
-- **Direct TypeScript Execution**: Runs with `tsx`—no compilation needed.
+## Highlights
+- Iterative agent loop with native `bindTools` and tool-result reinjection.
+- Dynamic tool discovery from `src/tools` (no central hardcoded tool list).
+- Built-in filesystem, shell, code execution, git, patch/diff, and search tools.
+- Security hardening for path safety, shell input checks, output limits, and permissions.
+- Streaming mode that assembles `ToolCallChunk` fragments and resumes streaming after tool runs.
+- Observability/tracing with per-invocation JSON trace output and token/cost accounting.
+- MCP client bridge that can register remote MCP tools at startup.
+- Planner/orchestrator/subagent modules for phased and parallelized task execution patterns.
 
-## Prerequisites
-- Node.js (v20 or later)
-- npm or yarn
-- Mistral API key (sign up at [mistral.ai](https://mistral.ai/))
+## Requirements
+- Node.js 20+
+- npm
+- Mistral API key
 
-## Setup
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/huberp/agentloop.git
-   cd agentloop
-   ```
+## Quick Start
+1. Clone and install:
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Create a `.env` file in the project root and add runtime configuration:
-   ```env
-   MISTRAL_API_KEY=your_mistral_api_key_here
-   LOG_LEVEL=info
-   LOG_ENABLED=true
-   LOG_DESTINATION=stdout
-   LOG_NAME=agentloop
-   LOG_TIMESTAMP=true
-   LLM_PROVIDER=mistral
-   LLM_MODEL=
-   LLM_TEMPERATURE=0.7
-   ```
-
-## Usage
-Run the agent directly with `tsx`:
 ```bash
-npx tsx src/index.ts
+git clone https://github.com/huberp/agentloop.git
+cd agentloop
+npm install
 ```
 
-### Example Interaction
-```plaintext
-User: What is the capital of France?
-Agent: The capital of France is Paris.
+2. Create `.env` from `.env.example` and set at least:
 
-User: Calculate 5 * 8
-Agent: Result of 5 * 8: 40
-
-User: exit
-Agent: Goodbye!
+```env
+MISTRAL_API_KEY=your_mistral_api_key_here
+LLM_PROVIDER=mistral
+LLM_MODEL=
+LLM_TEMPERATURE=0.7
 ```
 
-## Tools
-The agent supports the following tools by default:
-- **Search**: Mock web search (replace with a real API like SerpAPI or Google Custom Search).
-- **Calculate**: Evaluates mathematical expressions.
+3. Start the CLI:
 
-To add more tools, edit `src/tools.ts` and register them in `src/index.ts`.
+```bash
+npm run start
+```
 
-## Logging
-- Logging is configured via dotenv-backed config in `src/config.ts`.
-- Logger implementation is in `src/logger.ts` and writes to stdout by default.
-- Each model turn logs:
-   - requested tool count and names
-   - each tool invocation with arguments
-   - each tool result payload
+4. Exit with `exit`.
 
-You can change logging behavior with environment variables:
-- `LOG_LEVEL` (for example: `debug`, `info`, `warn`, `error`)
-- `LOG_ENABLED` (`true` or `false`)
-- `LOG_DESTINATION` (`stdout` or `stderr`)
-- `LOG_NAME` (logger name field)
-- `LOG_TIMESTAMP` (`true` or `false`)
+## Runtime Architecture
+- `src/config.ts`: dotenv initialization and all runtime config (`appConfig`).
+- `src/index.ts`: primary iterative loop, tool execution, retries, timeout handling.
+- `src/streaming.ts`: streaming loop with chunked tool-call assembly.
+- `src/tools/registry.ts`: tool registration + dynamic loading from `src/tools`.
+- `src/security.ts`: permission manager, network allowlist checks, concurrency limiter.
+- `src/observability.ts`: tracer interface and file-based tracing implementation.
+- `src/mcp/*`: MCP client + bridge for registering MCP tools.
+- `src/subagents/*`: planner, runner, and manager for specialized subagent workflows.
+- `src/orchestrator.ts`: plan execution with retry/skip/abort and checkpointing support.
 
-## Streaming
+## Built-In Tools
+Current built-in tool names:
+- `calculate`
+- `search`
+- `code-search`
+- `code_run`
+- `shell`
+- `file-list`
+- `file-read`
+- `file-write`
+- `file-edit`
+- `file-delete`
+- `diff`
+- `patch`
+- `git-status`
+- `git-log`
+- `git-diff`
+- `git-commit`
 
-Set `STREAMING_ENABLED=true` to enable streaming mode.  In this mode the CLI
-prints each token as it arrives from the LLM instead of waiting for the full
-response before printing.
+MCP tools are additional and discovered at runtime from configured MCP servers.
 
-Tool calls are automatically handled during streaming: partial `ToolCallChunk`
-messages are buffered per-index until each call is fully assembled, the tool is
-executed, and streaming resumes for the next LLM turn.
+## Configuration
+All runtime settings come from `appConfig` in `src/config.ts`.
 
-The programmatic API exposes both modes:
+Key groups in `.env.example`:
+- Agent loop: `MAX_ITERATIONS`, `MAX_CONTEXT_TOKENS`, retry and timeout settings.
+- LLM: `LLM_PROVIDER`, `LLM_MODEL`, `LLM_TEMPERATURE`.
+- Tool permissions: `AUTO_APPROVE_ALL`, `TOOL_ALLOWLIST`, `TOOL_BLOCKLIST`.
+- Shell/code execution: `SHELL_COMMAND_BLOCKLIST`, `EXECUTION_TIMEOUT_MS`.
+- Workspace isolation: `WORKSPACE_ROOT`.
+- MCP: `MCP_SERVERS` JSON array.
+- Security limits: `MAX_FILE_SIZE_BYTES`, `MAX_SHELL_OUTPUT_BYTES`, `MAX_CONCURRENT_TOOLS`, `NETWORK_ALLOWED_DOMAINS`.
+- Sandbox: `SANDBOX_MODE`, `SANDBOX_DOCKER_IMAGE`.
+- Streaming: `STREAMING_ENABLED`.
+- Tracing: `TRACING_ENABLED`, `TRACE_OUTPUT_DIR`, token cost vars.
+- Logging: `LOG_LEVEL`, `LOG_ENABLED`, `LOG_DESTINATION`, `LOG_NAME`, `LOG_TIMESTAMP`.
+
+## MCP Server Configuration
+`MCP_SERVERS` uses a JSON array. Example:
+
+```env
+MCP_SERVERS=[{"name":"my-server","transport":"stdio","command":"npx","args":["my-mcp-server"]}]
+```
+
+Supported transports are `stdio` and `sse`.
+
+## Streaming API
+Programmatic usage:
 
 ```ts
-// Non-streaming (default) – returns the full output once complete
-const { output } = await agentExecutor.invoke("What is 2+2?");
+import { agentExecutor } from "./src/index";
 
-// Streaming – yields text chunks incrementally via an AsyncGenerator
-for await (const chunk of agentExecutor.stream("What is 2+2?")) {
+const result = await agentExecutor.invoke("Summarize this project");
+console.log(result.output);
+
+for await (const chunk of agentExecutor.stream("Explain the recent changes")) {
   process.stdout.write(chunk);
 }
 ```
 
-The streaming loop lives in `src/streaming.ts` and is wired into `src/index.ts`
-via an `executeWithToolsStream` wrapper.
+## Security
+See `docs/security.md` for threat model and mitigations, including:
+- path traversal prevention for file/shell cwd operations
+- shell injection checks
+- output and file-size limits
+- concurrency limits
+- network domain allowlist for network-capable tools
 
-## LLM Provider
+## Tests
+Run the full suite:
 
-The LLM is configured via `src/llm.ts`, which exports a `createLLM(config)` factory used by `src/index.ts`.
-
-- `LLM_PROVIDER` — selects the chat model provider (default: `mistral`; add new providers to the switch in `src/llm.ts`)
-- `LLM_MODEL` — optional model name passed to the provider SDK (uses SDK default when empty)
-- `LLM_TEMPERATURE` — sampling temperature (default: `0.7`)
-
-## Architecture Notes
-- `src/config.ts` is the single place that initializes dotenv and reads runtime configuration.
-- `src/llm.ts` exports `createLLM(config)`, a provider factory that returns a `BaseChatModel`. Extend the switch block to add new providers.
-- `src/index.ts` uses `createLLM(appConfig)` to obtain the LLM and binds tools with `llm.bindTools(tools)`.
-- Backward compatibility fallback for non-`bindTools` runtimes has been removed after library upgrades.
-
-## Testing
-Run tests with:
 ```bash
 npm test
 ```
 
-## GitHub Actions
-The repository includes a workflow (`.github/workflows/test.yml`) that runs tests on every push/pull request. Ensure you add your Mistral API key as a GitHub Secret named `MISTRAL_API_KEY`.
+There are focused suites for major areas including tooling, orchestration,
+streaming, MCP, sandboxing, and security hardening.
 
 ## License
-This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
-
-## Contributing
-Contributions are welcome! Open an issue or submit a pull request.
-
-## Acknowledgements
-- [LangChain](https://langchain.com/) for the agent framework.
-- [Mistral AI](https://mistral.ai/) for the LLM API.
+MIT. See [LICENSE](LICENSE).
