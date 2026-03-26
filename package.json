@@ -6,7 +6,9 @@
   "scripts": {
     "test": "jest",
     "test:e2e": "jest --config jest.e2e.config.js",
-    "start": "npx tsx src/index.ts"
+    "start": "npx tsx src/index.ts",
+    "bench": "npx tsx benchmarks/run-all.ts",
+    "bench:profile": "node --prof --require tsx/cjs benchmarks/run-all.ts"
   },
   "keywords": [
     "langchain",
