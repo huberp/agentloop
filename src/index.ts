@@ -27,7 +27,7 @@ import {
   newInvocationId,
 } from "./observability";
 import { streamWithTools } from "./streaming";
-import { Spinner } from "./spinner";
+import { spinner } from "./spinner";
 
 // Re-export the singleton tool registry (created in tools/registry.ts)
 export { toolRegistry };
@@ -417,8 +417,6 @@ async function main() {
     input: process.stdin,
     output: process.stdout,
   });
-
-  const spinner = new Spinner();
 
   console.log("Agent: Hello! I'm ready to help. Type 'exit' to quit.");
 

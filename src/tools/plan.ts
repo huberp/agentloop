@@ -3,32 +3,25 @@ import { z } from "zod";
 import { appConfig } from "../config";
 import { logger } from "../logger";
 import { spinner } from "../spinner";
-import { executePlan } from "../orchestrator";
 import { generatePlan, refinePlan, validatePlan } from "../subagents/planner";
 import { analyzeWorkspace } from "../workspace";
 import type { ToolDefinition } from "./registry";
 import { toolRegistry } from "./registry";
 
 const schema = z.object({
-  goal: z.string().describe("High-level goal to plan and execute"),
-  onStepFailure: z
-    .enum(["retry", "skip", "abort"])
-    .optional()
-    .default("retry")
-    .describe('What to do when a step fails: "retry" (default), "skip", or "abort"'),
+  goal: z.string().describe("High-level goal to decompose into an actionable plan"),
 });
 
 export const toolDefinition: ToolDefinition = {
-  name: "plan-and-run",
+  name: "plan",
   description:
-    "Decompose a high-level goal into an actionable plan using the planner subagent, " +
-    "then execute each step in sequence. Auto-refines the plan once if unknown tools are referenced.",
+    "Decompose a high-level goal into a structured, step-by-step plan using the planner " +
+    "subagent. Returns the plan as a JSON object — pass it directly to the 'run' tool to execute.",
   schema,
-  permissions: "dangerous",
-  // Planning + multi-step execution spawns many sequential LLM calls; allow up to 30 minutes.
-  timeout: 30 * 60_000,
-  execute: async ({ goal, onStepFailure = "retry" }) => {
-    logger.info({ tool: "plan-and-run", goal }, "generating plan");
+  permissions: "safe",
+  timeout: 10 * 60_000,
+  execute: async ({ goal }) => {
+    logger.info({ tool: "plan", goal }, "generating plan");
 
     const workspaceInfo = await analyzeWorkspace(appConfig.workspaceRoot);
 
@@ -37,7 +30,7 @@ export const toolDefinition: ToolDefinition = {
     let validation = validatePlan(plan, toolRegistry);
     if (!validation.valid) {
       logger.warn(
-        { tool: "plan-and-run", invalidTools: validation.invalidTools },
+        { tool: "plan", invalidTools: validation.invalidTools },
         "plan references unknown tools — refining"
       );
       plan = await refinePlan(
@@ -65,21 +58,9 @@ export const toolDefinition: ToolDefinition = {
     }
     spinner.writeLine("");
 
-    logger.info({ tool: "plan-and-run", steps: plan.steps.length }, "executing plan");
+    logger.info({ tool: "plan", steps: plan.steps.length }, "plan generated");
 
-    const result = await executePlan(plan, toolRegistry, {
-      onStepFailure,
-      progress: (msg) => spinner.writeLine(`  ↳ ${msg}`),
-    });
-
-    const lines = result.stepResults.map((s) => {
-      const icon = s.status === "success" ? "✓" : s.status === "skipped" ? "–" : "✗";
-      const suffix = s.error ? ` [${s.error}]` : "";
-      return `${icon} Step ${s.stepIndex + 1}: ${s.description}${suffix}`;
-    });
-
-    lines.push("", result.success ? "Completed successfully." : "Completed with failures.");
-
-    return lines.join("\n");
+    // Return JSON so the LLM can inspect steps and pass the object to the 'run' tool.
+    return JSON.stringify(plan);
   },
 };

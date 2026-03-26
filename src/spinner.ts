@@ -34,6 +34,25 @@ export class Spinner {
   }
 
   /**
+   * Write a line of output while the spinner may be running.
+   * Clears the spinner line first (prevents the spinner frame from overwriting
+   * the message via a subsequent \r render), then writes the message followed
+   * by a newline so the next spinner render lands on a fresh blank line.
+   *
+   * Use this instead of process.stdout/stderr.write() for any status or
+   * progress text that must not interleave with the spinner.
+   */
+  writeLine(message: string): void {
+    if (process.stderr.isTTY) {
+      // \r\x1b[K clears the current line (removes any partial spinner frame),
+      // then the message + \n leaves the cursor on a new blank line.
+      process.stderr.write(`\r\x1b[K${message}\n`);
+    } else {
+      process.stderr.write(`${message}\n`);
+    }
+  }
+
+  /**
    * Stop the spinner and erase its line from the terminal.
    * Always call this before writing the next line to stdout so the agent
    * response starts cleanly on a fresh line.
@@ -55,3 +74,6 @@ export class Spinner {
     process.stderr.write(`\r${frame} ${this.currentMessage}`);
   }
 }
+
+/** Module-level singleton shared by the CLI and tools that emit progress output. */
+export const spinner = new Spinner();
