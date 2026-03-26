@@ -140,7 +140,7 @@ describe("Security — shell tool blocks injection attempts", () => {
   });
 
   it("allows a clean command through", async () => {
-    const raw = await shellTool().execute({ command: "echo safe" });
+    const raw = await shellTool().execute({ command: "node -e process.stdout.write('safe\\n')" });
     const result = parseShellResult(raw);
     expect(result.exitCode).toBe(0);
     expect(result.stdout.trim()).toBe("safe");
@@ -161,7 +161,7 @@ describe("Security — shell cwd confinement", () => {
   afterAll(() => cleanTmpWorkspace(workspace));
 
   it("rejects a cwd outside the workspace root", async () => {
-    const raw = await shellTool().execute({ command: "pwd", cwd: "../../tmp" });
+    const raw = await shellTool().execute({ command: "node -e console.log(process.cwd())", cwd: "../../tmp" });
     const result = parseShellResult(raw);
     expect(result.exitCode).toBe(-1);
     expect(result.stderr).toMatch(/outside the workspace root/i);
@@ -198,7 +198,7 @@ describe("Security — shell tool enforces MAX_SHELL_OUTPUT_BYTES", () => {
 
     try {
       // Generate more than 20 bytes of output
-      const raw = await shellTool().execute({ command: "echo 0123456789ABCDEFGHIJ0123456789" });
+      const raw = await shellTool().execute({ command: "node -e process.stdout.write('0123456789ABCDEFGHIJ0123456789\\n')" });
       const result = parseShellResult(raw);
       expect(result.stdout).toContain("[Output truncated");
     } finally {

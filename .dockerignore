@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.git/
+.env
+*.log
+tests/
+benchmarks/
+**/__tests__/**
+*.test.ts
+*.spec.ts
+.github/
+docs/

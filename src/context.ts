@@ -28,17 +28,22 @@ export function countTokens(messages: BaseMessage[]): number {
 export function trimMessages(messages: BaseMessage[], maxTokens: number): BaseMessage[] {
   if (messages.length <= 1) return messages;
 
-  let total = countTokens(messages);
+  // Compute per-message token counts in a single pass to avoid redundant
+  // tokenizer calls during the drop loop (each enc.encode() call has overhead).
+  const tokenCounts = messages.map(messageTokens);
+  let total = tokenCounts.reduce((sum, t) => sum + t, 0);
+
   if (total <= maxTokens) return messages;
 
   const first = messages[0];   // system prompt — never dropped
   const last = messages[messages.length - 1]; // most-recent message — never dropped
-  let middle = messages.slice(1, -1);
+  const middle = messages.slice(1, -1);
+  const middleCounts = tokenCounts.slice(1, -1);
 
-  // Drop oldest middle messages, subtracting their tokens from the running total
+  // Drop oldest middle messages, subtracting their pre-computed token count
   let i = 0;
   while (i < middle.length && total > maxTokens) {
-    total -= messageTokens(middle[i]);
+    total -= middleCounts[i];
     i++;
   }
 

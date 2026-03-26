@@ -1,0 +1,12 @@
+{
+  "name": "devops",
+  "description": "DevOps and infrastructure agent — manages CI/CD, containers, deployments, and shell automation",
+  "version": "1.0.0",
+  "temperature": 0.2,
+  "skills": ["git-workflow"],
+  "tools": ["shell", "file-read", "file-write", "file-edit", "file-list", "git-commit", "git-diff", "git-log", "git-status"],
+  "maxIterations": 30,
+  "constraints": {
+    "requireConfirmation": ["shell", "git-commit"]
+  }
+}

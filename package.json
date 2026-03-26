@@ -1,11 +1,24 @@
 {
-  "name": "agentloop",
+  "name": "@huberp/agentloop",
   "version": "1.0.0",
   "description": "TypeScript LangChain Agent Loop with Mistral LLM",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "build:clean": "rimraf dist && tsc --project tsconfig.json",
+    "start": "npx tsx src/index.ts",
+    "start:prod": "node dist/index.js",
     "test": "jest",
-    "start": "npx tsx src/index.ts"
+    "test:e2e": "jest --config jest.e2e.config.js",
+    "bench": "npx tsx benchmarks/run-all.ts",
+    "bench:profile": "node --prof --require tsx/cjs benchmarks/run-all.ts",
+    "prepublishOnly": "npm run build:clean && npm test"
   },
   "keywords": [
     "langchain",
@@ -32,6 +45,7 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^25.5.0",
     "jest": "^30.3.0",
+    "rimraf": "^6.1.3",
     "ts-jest": "^29.4.6",
     "typescript": "^5.4.5"
   },
@@ -50,6 +64,9 @@
     },
     "testMatch": [
       "**/__tests__/**/*.test.ts"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^@modelcontextprotocol/sdk/(.*)$": "<rootDir>/node_modules/@modelcontextprotocol/sdk/dist/cjs/$1"
+    }
   }
 }

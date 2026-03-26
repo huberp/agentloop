@@ -48,7 +48,10 @@ export class ToolRegistry {
     }
     // Wrap the definition in a LangChain structured tool for bindTools/invoke compatibility.
     // `execute` is typed as `(args: any)` so it satisfies any Zod-inferred parameter type.
-    const langchainTool = tool(definition.execute, {
+    // Cast through `any` to avoid TS2589 (excessively deep type instantiation) caused by
+    // LangChain's complex `tool()` overloads when declaration emit resolves all type branches.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const langchainTool: StructuredToolInterface = (tool as any)(definition.execute, {
       name: definition.name,
       description: definition.description,
       schema: definition.schema,
@@ -114,3 +117,6 @@ export class ToolRegistry {
     }
   }
 }
+
+/** Module-level singleton shared across the application. */
+export const toolRegistry = new ToolRegistry();

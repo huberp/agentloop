@@ -17,18 +17,23 @@ jest.mock("@langchain/mistralai", () => ({
 }));
 
 // Mock ToolRegistry so tests control which tools are available and how they behave
-jest.mock("../tools/registry", () => ({
-  ToolRegistry: jest.fn().mockImplementation(() => ({
+jest.mock("../tools/registry", () => {
+  const mockInstance = {
     register: jest.fn(),
     unregister: jest.fn(),
     get: jest.fn().mockImplementation((name: string) =>
       name === "search" ? { name: "search", invoke: mockToolInvoke } : undefined
     ),
+    getDefinition: jest.fn().mockReturnValue(undefined),
     list: jest.fn().mockReturnValue([{ name: "search", description: "Search the web" }]),
     toLangChainTools: jest.fn().mockReturnValue([{ name: "search", invoke: mockToolInvoke }]),
     loadFromDirectory: jest.fn().mockResolvedValue(undefined),
-  })),
-}));
+  };
+  return {
+    ToolRegistry: jest.fn().mockImplementation(() => mockInstance),
+    toolRegistry: mockInstance,
+  };
+});
 
 process.env.MISTRAL_API_KEY = "test-api-key";
 

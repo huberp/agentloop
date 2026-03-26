@@ -311,7 +311,7 @@ async function searchFileContent(
       matches.push({
         file: relFile,
         line: i + 1,
-        column: m.index + 1,
+        column: (m.index ?? 0) + 1,
         content: lines[i],
         context: [...before, ...after],
       });
