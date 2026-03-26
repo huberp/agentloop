@@ -1,5 +1,6 @@
 import * as fs from "fs/promises";
 import * as path from "path";
+import { pathToFileURL } from "url";
 import { tool } from "@langchain/core/tools";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
@@ -109,8 +110,9 @@ export class ToolRegistry {
 
     for (const file of toolFiles) {
       const filePath = path.join(dirPath, file);
+      const fileUrl = pathToFileURL(filePath).href;
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const mod = await import(filePath);
+      const mod = await import(fileUrl);
       if (mod.toolDefinition) {
         this.register(mod.toolDefinition as ToolDefinition);
       }
