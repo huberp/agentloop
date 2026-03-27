@@ -7,7 +7,6 @@ updates:
     groups:
       compatible:
         update-types:
-          - "major"
           - "minor"
           - "patch"
 
@@ -18,6 +17,5 @@ updates:
     groups:
       compatible:
         update-types:
-          - "major"
           - "minor"
           - "patch"
