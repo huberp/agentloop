@@ -34,10 +34,16 @@ cp .env.example .env
 # Edit .env and set MISTRAL_API_KEY=your_key_here
 
 # 3. Run
-npm run start
+npm run startCli
 ```
 
 Type a message and press **Enter**. Type `exit` to quit.
+
+To launch the Ink-based multi-pane TUI:
+
+```bash
+npm run startTui
+```
 
 ## Programmatic API
 
@@ -71,7 +77,9 @@ for await (const chunk of agentExecutor.stream("What files changed recently?")) 
 
 | Command | Description |
 |---|---|
-| `npm run start` | Start the interactive CLI agent (dev mode via tsx) |
+| `npm run start` | Start the agent using `UI_MODE` from the environment |
+| `npm run startCli` | Start the readline CLI agent (dev mode via tsx) |
+| `npm run startTui` | Start the Ink TUI agent (dev mode via tsx) |
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run build:clean` | Remove `dist/` then compile |
 | `npm run start:prod` | Start the agent from compiled `dist/` |

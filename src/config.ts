@@ -131,6 +131,8 @@ export const appConfig = {
   // Runtime context injection: when enabled, injects current date/time, OS platform, and Node.js
   // version into the system prompt as a synthetic instruction block (default: true)
   runtimeContextEnabled: asBoolean(process.env.RUNTIME_CONTEXT_ENABLED, true),
+  // User interface mode for interactive runs: "cli" (readline) or "tui" (Ink)
+  uiMode: (process.env.UI_MODE ?? "cli").toLowerCase(),
   // Skills directory (Task 6.1); auto-loaded on startup
   skillsDir: process.env.SKILLS_DIR ?? "",
   // Agent profiles directory (Task 7.1); auto-loaded on startup

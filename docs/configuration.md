@@ -23,6 +23,7 @@ All runtime settings are loaded from environment variables via `src/config.ts` u
 | `MAX_TOKENS_BUDGET` | `0` | int | Token budget reserved for future context-window management. `0` = disabled. |
 | `MAX_CONTEXT_TOKENS` | `28000` | int | Maximum tokens in the context window (system prompt + history). Messages are trimmed to stay within this limit. |
 | `SYSTEM_PROMPT_PATH` | *(empty)* | string | Optional path to a `.txt` or `.md` file that overrides the generated system prompt. |
+| `UI_MODE` | `cli` | string | Interactive runtime interface mode: `cli` (readline) or `tui` (Ink multi-pane UI). |
 
 ---
 

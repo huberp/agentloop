@@ -28,6 +28,7 @@ import {
 } from "./observability";
 import { streamWithTools } from "./streaming";
 import { spinner } from "./spinner";
+import { runInkTui } from "./ui/tui";
 
 // Re-export the singleton tool registry (created in tools/registry.ts)
 export { toolRegistry };
@@ -412,7 +413,12 @@ export const agentExecutor = {
 };
 
 // Main loop
-async function main() {
+export async function main() {
+  if (appConfig.uiMode === "tui") {
+    await runInkTui(agentExecutor);
+    return;
+  }
+
   const readline = require("readline").createInterface({
     input: process.stdin,
     output: process.stdout,
