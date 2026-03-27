@@ -67,7 +67,8 @@
       "**/__tests__/**/*.test.ts"
     ],
     "moduleNameMapper": {
-      "^@modelcontextprotocol/sdk/(.*)$": "<rootDir>/node_modules/@modelcontextprotocol/sdk/dist/cjs/$1"
+      "^@modelcontextprotocol/sdk/(.*)$": "<rootDir>/node_modules/@modelcontextprotocol/sdk/dist/cjs/$1",
+      "^uuid$": "<rootDir>/node_modules/uuid/dist/index.js"
     }
   }
 }
