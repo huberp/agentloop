@@ -105,6 +105,9 @@ export const appConfig = {
   llmFixtureDir: process.env.LLM_FIXTURE_DIR ?? "tests/fixtures/llm-responses",
   // DuckDuckGo search tool: maximum number of results to return per query (default: 5)
   duckduckgoMaxResults: parseInt(process.env.DUCKDUCKGO_MAX_RESULTS ?? "5", 10),
+  // Runtime context injection: when enabled, injects current date/time, OS platform, and Node.js
+  // version into the system prompt as a synthetic instruction block (default: true)
+  runtimeContextEnabled: asBoolean(process.env.RUNTIME_CONTEXT_ENABLED, true),
   // Skills directory (Task 6.1); auto-loaded on startup
   skillsDir: process.env.SKILLS_DIR ?? "",
   // Agent profiles directory (Task 7.1); auto-loaded on startup

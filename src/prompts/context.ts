@@ -168,3 +168,46 @@ registerContextProvider(async () => {
   );
   return { skills: skillFragments, tools: toolsFromSkills };
 });
+
+// ---------------------------------------------------------------------------
+// 5. Runtime context (date/time, OS, Node.js version)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the runtime context instruction body.
+ * Uses only Node.js built-ins (Date, Intl, process) — no external dependencies.
+ * Exported for direct unit testing.
+ */
+export function buildRuntimeContextBody(): string {
+  const now = new Date();
+  const isoDate = now.toISOString();
+  const localDate = now.toLocaleString(undefined, {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  return [
+    "Runtime context:",
+    `- Current date/time: ${localDate} (${tz}) | ISO: ${isoDate}`,
+    `- Platform: ${process.platform} / ${process.arch}`,
+    `- Node.js: ${process.version}`,
+  ].join("\n");
+}
+
+registerContextProvider(async () => {
+  if (!appConfig.runtimeContextEnabled) return {};
+  return {
+    instructions: [
+      {
+        filePath: "<runtime>",
+        meta: { priority: 100 },
+        body: buildRuntimeContextBody(),
+      },
+    ],
+  };
+});

@@ -62,6 +62,7 @@ import {
   clearContextProviders,
   getCachedPromptContext,
   invalidateContextCache,
+  buildRuntimeContextBody,
 } from "../prompts/context";
 import { appConfig } from "../config";
 
@@ -273,5 +274,40 @@ describe("getCachedPromptContext()", () => {
     expect(spy).toHaveBeenCalledTimes(1);
 
     nowSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildRuntimeContextBody
+// ---------------------------------------------------------------------------
+
+describe("buildRuntimeContextBody()", () => {
+  it("contains the current year", () => {
+    const body = buildRuntimeContextBody();
+    expect(body).toContain(new Date().getFullYear().toString());
+  });
+
+  it("contains the current OS platform", () => {
+    const body = buildRuntimeContextBody();
+    expect(body).toContain(process.platform);
+  });
+
+  it("contains the CPU architecture", () => {
+    const body = buildRuntimeContextBody();
+    expect(body).toContain(process.arch);
+  });
+
+  it("contains the Node.js version", () => {
+    const body = buildRuntimeContextBody();
+    expect(body).toContain(process.version);
+  });
+
+  it("contains an ISO 8601 date string", () => {
+    const body = buildRuntimeContextBody();
+    expect(body).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  });
+
+  it("returns a non-empty string", () => {
+    expect(buildRuntimeContextBody().length).toBeGreaterThan(0);
   });
 });
