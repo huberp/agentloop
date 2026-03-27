@@ -13,6 +13,12 @@ graph TD
     Init -->|bindTools| LLM[LLM<br>src/llm.ts]
     Init -->|load| Skills[SkillRegistry]
     Init -->|load| Agents[AgentProfileRegistry]
+    Main -->|explicit profileName?| ProfileCheck{Profile<br>provided?}
+    ProfileCheck -->|yes| Activate[activateProfile<br>src/agents/activator.ts]
+    ProfileCheck -->|no + COORDINATOR_ENABLED| Router[routeRequest<br>src/agents/coordinator.ts]
+    Router -->|auto-selected profile| Activate
+    Router -->|null| AgentLoop
+    Activate -->|AgentRuntimeConfig| AgentLoop
     Main -->|loop| AgentLoop[Agentic Loop]
     AgentLoop -->|invoke| LLM
     LLM -->|tool_calls| ToolExec[Tool Execution]
@@ -91,6 +97,7 @@ sequenceDiagram
 | `src/skills/registry.ts` | `SkillRegistry` — loads and exposes skill definitions |
 | `src/agents/registry.ts` | `AgentProfileRegistry` — loads agent profile JSON/YAML files |
 | `src/agents/activator.ts` | `activateProfile()` — applies a profile's overrides to runtime config |
+| `src/agents/coordinator.ts` | `routeRequest()` — LLM-driven profile auto-selection; `coordinatedExecute()` — unified routing + planning + execution entry point |
 | `src/workspace.ts` | `analyzeWorkspace()` — detects language, framework, and lifecycle commands |
 | `src/logger.ts` | Structured Pino logger; configured from `appConfig.logger` |
 | `src/errors.ts` | `ToolExecutionError`, `ToolBlockedError` typed error classes |
@@ -137,6 +144,66 @@ graph LR
 ```
 
 Failure strategies per step: `retry` (default), `skip`, or `abort`.
+
+---
+
+## Agent Profiles & Coordinator
+
+Agent profiles restrict which tools the LLM can call, set a custom temperature and model, and activate skills. The coordinator adds automatic profile selection on top of explicit profile names.
+
+### Profile activation
+
+```mermaid
+graph TD
+    Invoke["agentExecutor.invoke(input, profileName?)"] --> HasProfile{Explicit<br>profile name?}
+    HasProfile -->|yes| Registry[AgentProfileRegistry.get]
+    HasProfile -->|no + COORDINATOR_ENABLED| Router[routeRequest<br>coordinator.ts]
+    Router -->|LLM routing subagent<br>returns JSON profile name| Registry
+    Router -->|null — no match| DefaultLoop[Default loop<br>no profile]
+    Registry --> Activate[activateProfile<br>activator.ts]
+    Activate --> SkillReg[activate skills<br>SkillRegistry]
+    Activate --> FilterTools[filter tool list<br>by profile.tools & blockedTools]
+    Activate --> AgentRuntimeConfig[AgentRuntimeConfig<br>model · temperature · maxIterations<br>activeSkills · activeTools · constraints]
+    AgentRuntimeConfig --> BoundLLM[LLM bound with<br>filtered tools]
+    BoundLLM --> AgentLoop[Agentic Loop]
+```
+
+### Coordinator flow (`coordinatedExecute`)
+
+`coordinatedExecute()` in `src/agents/coordinator.ts` is a higher-level entry point that combines routing, planning, and execution into one call. It is the basis for complex multi-step work where each plan step benefits from a specialised profile.
+
+```mermaid
+sequenceDiagram
+    participant Caller
+    participant Coord as coordinatedExecute
+    participant Router as routeRequest
+    participant Planner as generatePlan
+    participant Invoke as invoke (single-step)
+    participant Orch as executePlan (multi-step)
+
+    Caller->>Coord: coordinatedExecute(request, options)
+    Coord->>Router: routeRequest(request, profileRegistry)
+    Router-->>Coord: profile | null
+    Coord->>Planner: generatePlan(request, workspaceInfo, registry, profileRegistry)
+    Planner-->>Coord: Plan (steps with agentProfile annotations)
+    alt steps ≤ planThreshold
+        Coord->>Invoke: invoke(request, profile?.name)
+        Invoke-->>Caller: { output }
+    else steps > planThreshold
+        Coord->>Orch: executePlan(plan, registry, { profileRegistry })
+        Orch-->>Caller: ExecutionResult
+    end
+```
+
+**Built-in profiles:**
+
+| Profile | Temperature | Tools | Max Iterations | Skills |
+|---|---|---|---|---|
+| `planner` | 0.7 | file-read, file-write, file-list, code-search | 10 | — |
+| `coder` | 0.2 | file-read/write/edit/delete, code-run, code-search, shell, calculate | 20 | typescript-expert |
+| `reviewer` | 0.3 | file-read, file-list, code-search, git-diff, git-log, git-status | 15 | code-reviewer |
+| `devops` | 0.2 | shell, file-read/write/edit, file-list, git-commit/diff/log/status | 30 | git-workflow |
+| `security-auditor` | 0.1 | file-read, file-list, code-search, git-diff, shell | 25 | security-auditor |
 
 ---
 
