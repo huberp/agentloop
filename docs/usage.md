@@ -445,6 +445,103 @@ User: Plan and execute: add a health-check endpoint to the Express app
 
 ---
 
+## Coordinator — Automatic Profile Routing and Plan-Aware Orchestration
+
+The **Coordinator** adds intelligence between the user request and execution. It automatically
+selects the right agent profile and — for multi-step work — annotates each plan step with the
+most appropriate specialist profile.
+
+### Comparison: Coordinator vs Orchestrator vs direct `invoke()`
+
+| | `agentExecutor.invoke()` | `Orchestrator` (`executePlan`) | `Coordinator` (`coordinatedExecute`) |
+|---|---|---|---|
+| **Input** | Free-text prompt | A `Plan` (already decomposed) | Raw user request string |
+| **Profile selection** | Explicit name or none | None — anonymous subagents | Auto-routing via LLM |
+| **Planning** | None | External (you call `generatePlan`) | Built-in (calls `generatePlan` internally) |
+| **Per-step profiles** | N/A | None by default | Annotates each step via `agentProfile` field |
+| **Entry point** | `agentExecutor.invoke(request, profileName?)` | `executePlan(plan, registry, options?)` | `coordinatedExecute(request, options)` |
+
+### Automatic profile routing in `agentExecutor.invoke()`
+
+Enable coordinator routing by setting `COORDINATOR_ENABLED=true`. When no explicit profile name is
+passed to `agentExecutor.invoke()`, the coordinator selects the best available profile automatically:
+
+```env
+COORDINATOR_ENABLED=true
+```
+
+```ts
+// Profile is chosen automatically based on the request content
+const result = await agentExecutor.invoke("Write a function to reverse a string");
+// → coordinator selects "coder" profile automatically
+```
+
+The routing subagent receives your request and the list of registered profiles (name + description),
+then returns the single best match as JSON: `{ "profile": "coder" }`. If no profile clearly fits it
+returns `null` and the default (no-profile) loop is used.
+
+### Programmatic usage: `coordinatedExecute()`
+
+For full control over routing, planning, and profile-aware orchestration, use
+`coordinatedExecute()` directly:
+
+```ts
+import { coordinatedExecute } from "./src/agents/coordinator";
+import { agentProfileRegistry } from "./src/agents/registry";
+import { toolRegistry } from "./src/index";
+import { analyzeWorkspace } from "./src/workspace";
+import { appConfig } from "./src/config";
+
+const workspaceInfo = await analyzeWorkspace(appConfig.workspaceRoot);
+
+const result = await coordinatedExecute("Add a health-check endpoint", {
+  registry: toolRegistry,
+  profileRegistry: agentProfileRegistry,
+  workspaceInfo,
+  // Forward the agent executor for the single-step path (avoids circular import)
+  invoke: async (req, profileName) => agentExecutor.invoke(req, profileName),
+});
+```
+
+**Flow:**
+1. `routeRequest()` selects the best profile for the overall request (or `null`).
+2. `generatePlan()` decomposes the request into annotated steps (`agentProfile` per step).
+3. If `steps.length <= COORDINATOR_PLAN_THRESHOLD` → single-invoke path (fast, uses selected profile).
+4. If `steps.length > COORDINATOR_PLAN_THRESHOLD` → plan+orchestrate path with per-step profiles.
+
+### Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `COORDINATOR_ENABLED` | `false` | Enable automatic profile routing in `agentExecutor.invoke()` |
+| `COORDINATOR_PLAN_THRESHOLD` | `1` | Step count above which `coordinatedExecute()` uses the plan+orchestrate path |
+
+### Profile-annotated plans
+
+When `generatePlan()` is called with a `profileRegistry`, the planner annotates each step with the
+most suitable profile:
+
+```ts
+import { generatePlan } from "./src/subagents/planner";
+
+const plan = await generatePlan(task, workspaceInfo, registry, llm, agentProfileRegistry);
+// plan.steps[0].agentProfile === "planner"
+// plan.steps[1].agentProfile === "coder"
+// plan.steps[2].agentProfile === "devops"
+```
+
+Pass the same registry to `executePlan()` so the orchestrator can apply each profile:
+
+```ts
+import { executePlan } from "./src/orchestrator";
+
+const result = await executePlan(plan, registry, { profileRegistry: agentProfileRegistry });
+```
+
+Each step runs with its annotated profile's model, temperature, and allowed tool set.
+
+---
+
 ## Further Reading
 
 - [architecture.md](architecture.md) — system diagrams for the agent loop, subagent architecture, and orchestrator

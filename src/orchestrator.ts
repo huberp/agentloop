@@ -6,6 +6,10 @@ import { SubagentManager } from "./subagents/manager";
 import { runSubagent } from "./subagents/runner";
 import type { Plan, PlanStep } from "./subagents/planner";
 import type { SubagentResult } from "./subagents/types";
+import type { AgentProfileRegistry } from "./agents/registry";
+import { activateProfile } from "./agents/activator";
+import { createLLM } from "./llm";
+import { appConfig } from "./config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -89,6 +93,12 @@ export interface ExecutionOptions {
    * Use this to drive a spinner or status line in the calling layer.
    */
   progress?: (message: string) => void;
+  /**
+   * Optional agent profile registry used to resolve per-step profiles.
+   * When a step's `agentProfile` field names a registered profile, the orchestrator
+   * activates that profile for the step (model, temperature, tool subset).
+   */
+  profileRegistry?: AgentProfileRegistry;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -107,6 +117,8 @@ function iterationBudget(step: PlanStep): number {
  * - Simple steps (low complexity, ≤1 tool needed) run directly via runSubagent,
  *   bypassing the concurrency manager.
  * - Complex steps are dispatched through the SubagentManager.
+ * - When `step.agentProfile` names a registered profile, the profile's model,
+ *   temperature and tool subset are applied for this step.
  *
  * Any exception thrown by the underlying runner propagates to the caller so the
  * configured failure strategy can be applied.
@@ -116,19 +128,68 @@ async function runStep(
   index: number,
   manager: SubagentManager,
   registry: ToolRegistry,
-  llm: BaseChatModel | undefined
+  llm: BaseChatModel | undefined,
+  profileRegistry?: AgentProfileRegistry
 ): Promise<SubagentResult> {
+  // Resolve per-step LLM and tool list when an agentProfile is annotated on the step
+  let stepLlm = llm;
+  let stepTools = step.toolsNeeded;
+
+  if (step.agentProfile && profileRegistry) {
+    const profile = profileRegistry.get(step.agentProfile);
+    if (profile) {
+      const runtimeConfig = activateProfile(profile);
+
+      // Intersect profile's active tools with the step's required tools (when both non-empty)
+      if (runtimeConfig.activeTools.length > 0 && step.toolsNeeded.length > 0) {
+        const profileToolSet = new Set(runtimeConfig.activeTools);
+        stepTools = step.toolsNeeded.filter((t) => profileToolSet.has(t));
+        if (stepTools.length === 0) {
+          logger.warn(
+            { stepIndex: index, agentProfile: step.agentProfile, stepToolsNeeded: step.toolsNeeded, profileTools: runtimeConfig.activeTools },
+            "Step tool intersection with profile is empty; step will run with no tools"
+          );
+        }
+      } else if (runtimeConfig.activeTools.length > 0) {
+        stepTools = runtimeConfig.activeTools;
+      }
+
+      // Create a per-step LLM when the profile overrides model or temperature
+      const needsNewLlm =
+        runtimeConfig.model !== undefined || runtimeConfig.temperature !== undefined;
+      if (needsNewLlm) {
+        stepLlm = createLLM({
+          ...appConfig,
+          ...(runtimeConfig.model !== undefined && { llmModel: runtimeConfig.model }),
+          ...(runtimeConfig.temperature !== undefined && {
+            llmTemperature: runtimeConfig.temperature,
+          }),
+        });
+      }
+
+      logger.debug(
+        { stepIndex: index, agentProfile: step.agentProfile, stepTools },
+        "Step using agent profile"
+      );
+    } else {
+      logger.warn(
+        { stepIndex: index, agentProfile: step.agentProfile },
+        "Step references unknown agent profile; using defaults"
+      );
+    }
+  }
+
   const definition = {
     name: `step-${index + 1}`,
-    tools: step.toolsNeeded,
+    tools: stepTools,
     maxIterations: iterationBudget(step),
   };
 
-  const isSimple = step.estimatedComplexity === "low" && step.toolsNeeded.length <= 1;
+  const isSimple = step.estimatedComplexity === "low" && stepTools.length <= 1;
 
   if (isSimple) {
     // Direct execution for lightweight steps — no manager overhead
-    return runSubagent(definition, step.description, registry, llm);
+    return runSubagent(definition, step.description, registry, stepLlm);
   }
 
   // Complex step: run through the SubagentManager (handles concurrency)
@@ -145,10 +206,11 @@ async function executeStep(
   manager: SubagentManager,
   registry: ToolRegistry,
   llm: BaseChatModel | undefined,
-  onStepFailure: FailureStrategy
+  onStepFailure: FailureStrategy,
+  profileRegistry?: AgentProfileRegistry
 ): Promise<StepResult> {
   const attempt = (): Promise<SubagentResult> =>
-    runStep(step, index, manager, registry, llm);
+    runStep(step, index, manager, registry, llm, profileRegistry);
 
   try {
     const result = await attempt();
@@ -225,7 +287,7 @@ export async function executePlan(
     logger.info({ step: stepNumber, total, description: step.description }, "Executing step");
     options.progress?.(`Step ${stepNumber}/${total}: ${step.description}`);
 
-    const result = await executeStep(step, i, manager, registry, llm, onStepFailure);
+    const result = await executeStep(step, i, manager, registry, llm, onStepFailure, options.profileRegistry);
     stepResults.push(result);
 
     // Persist progress after every step

@@ -316,3 +316,137 @@ describe("executePlan — checkpointing", () => {
     expect(saved!.stepResults[2].output).toBe("r3");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Profile-aware step execution
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("executePlan — profile-aware steps", () => {
+  /** Build a minimal profile registry with a single profile. */
+  async function makeProfileRegistry(profileName: string) {
+    const { AgentProfileRegistry } = await import("../agents/registry");
+    const reg = new AgentProfileRegistry();
+    reg.register({
+      name: profileName,
+      description: `${profileName} agent`,
+      version: "1.0.0",
+    });
+    return reg;
+  }
+
+  it("executes a step annotated with a registered agentProfile without error", async () => {
+    const profileRegistry = await makeProfileRegistry("coder");
+
+    const plan = {
+      steps: [
+        {
+          description: "Write some code",
+          toolsNeeded: [],
+          estimatedComplexity: "low" as const,
+          agentProfile: "coder",
+        },
+      ],
+    };
+
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({ content: "code written", tool_calls: [] });
+
+    const result = await executePlan(
+      plan,
+      new ToolRegistry(),
+      { profileRegistry },
+      makeMockLlm(invoke)
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.stepResults[0].status).toBe("success");
+    expect(result.stepResults[0].output).toBe("code written");
+  });
+
+  it("falls back to default execution when step agentProfile is not registered", async () => {
+    const profileRegistry = await makeProfileRegistry("coder");
+
+    const plan = {
+      steps: [
+        {
+          description: "Do something",
+          toolsNeeded: [],
+          estimatedComplexity: "low" as const,
+          agentProfile: "nonexistent-profile",
+        },
+      ],
+    };
+
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({ content: "fallback result", tool_calls: [] });
+
+    const result = await executePlan(
+      plan,
+      new ToolRegistry(),
+      { profileRegistry },
+      makeMockLlm(invoke)
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.stepResults[0].output).toBe("fallback result");
+  });
+
+  it("executes normally when no profileRegistry is provided and step has agentProfile", async () => {
+    const plan = {
+      steps: [
+        {
+          description: "Run a step",
+          toolsNeeded: [],
+          estimatedComplexity: "low" as const,
+          agentProfile: "coder",
+        },
+      ],
+    };
+
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({ content: "no registry result", tool_calls: [] });
+
+    // No profileRegistry supplied — should not throw
+    const result = await executePlan(plan, new ToolRegistry(), {}, makeMockLlm(invoke));
+
+    expect(result.success).toBe(true);
+    expect(result.stepResults[0].output).toBe("no registry result");
+  });
+
+  it("intersects profile tool list with step toolsNeeded when both are non-empty", async () => {
+    const { AgentProfileRegistry } = await import("../agents/registry");
+    const reg = new AgentProfileRegistry();
+    reg.register({
+      name: "coder",
+      description: "Writes code",
+      version: "1.0.0",
+      tools: ["file-write", "file-read"],
+    });
+
+    const registry = makeRegistry("file-write", "file-read", "git-commit");
+    const plan = {
+      steps: [
+        {
+          description: "Write a file",
+          // Step needs file-write and git-commit; profile only allows file-write and file-read
+          toolsNeeded: ["file-write", "git-commit"],
+          estimatedComplexity: "low" as const,
+          agentProfile: "coder",
+        },
+      ],
+    };
+
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({ content: "done", tool_calls: [] });
+
+    const result = await executePlan(plan, registry, { profileRegistry: reg }, makeMockLlm(invoke));
+
+    // Step should succeed — the tool intersection is applied, not an error
+    expect(result.success).toBe(true);
+    expect(result.stepResults[0].status).toBe("success");
+  });
+});

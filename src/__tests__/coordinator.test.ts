@@ -9,6 +9,9 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { ToolRegistry } from "../tools/registry";
 import { SubagentManager } from "../subagents/manager";
 import type { ParallelTask } from "../subagents/types";
+import { AgentProfileRegistry } from "../agents/registry";
+import { routeRequest, ROUTER_SYSTEM_PROMPT } from "../agents/coordinator";
+import type { AgentProfile } from "../agents/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -239,5 +242,212 @@ describe("SubagentManager.runParallel", () => {
     expect(systemContent).toContain("Shared Context (read-only)");
     expect(systemContent).toContain('"projectName": "agentloop"');
     expect(systemContent).toContain('"version": 2');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helper: build a minimal AgentProfile
+// ---------------------------------------------------------------------------
+
+function makeProfile(name: string, description: string): AgentProfile {
+  return {
+    name,
+    description,
+    version: "1.0.0",
+  };
+}
+
+/** Populate a fresh registry with a set of profiles. */
+function makeProfileRegistry(...profiles: AgentProfile[]): AgentProfileRegistry {
+  const reg = new AgentProfileRegistry();
+  for (const p of profiles) {
+    reg.register(p);
+  }
+  return reg;
+}
+
+// ---------------------------------------------------------------------------
+// routeRequest — coordinator router
+// ---------------------------------------------------------------------------
+
+describe("routeRequest", () => {
+  it("returns the matched profile when the LLM selects a valid name", async () => {
+    const coderProfile = makeProfile("coder", "Writes and edits source code");
+    const plannerProfile = makeProfile("planner", "Plans complex tasks");
+    const profileRegistry = makeProfileRegistry(coderProfile, plannerProfile);
+    const registry = new ToolRegistry();
+
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({ content: JSON.stringify({ profile: "coder" }), tool_calls: [] });
+
+    const result = await routeRequest(
+      "Write a function to sort an array",
+      profileRegistry,
+      registry,
+      makeMockLlm(invoke)
+    );
+
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("coder");
+  });
+
+  it("returns null when the LLM responds with { profile: null }", async () => {
+    const profileRegistry = makeProfileRegistry(makeProfile("coder", "Writes code"));
+    const registry = new ToolRegistry();
+
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({ content: JSON.stringify({ profile: null }), tool_calls: [] });
+
+    const result = await routeRequest(
+      "What is the capital of France?",
+      profileRegistry,
+      registry,
+      makeMockLlm(invoke)
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when the LLM returns an unknown profile name", async () => {
+    const profileRegistry = makeProfileRegistry(makeProfile("coder", "Writes code"));
+    const registry = new ToolRegistry();
+
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({
+        content: JSON.stringify({ profile: "nonexistent-profile" }),
+        tool_calls: [],
+      });
+
+    const result = await routeRequest(
+      "Do something",
+      profileRegistry,
+      registry,
+      makeMockLlm(invoke)
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null gracefully when the LLM returns invalid JSON", async () => {
+    const profileRegistry = makeProfileRegistry(makeProfile("coder", "Writes code"));
+    const registry = new ToolRegistry();
+
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({ content: "this is not json at all", tool_calls: [] });
+
+    const result = await routeRequest(
+      "Anything",
+      profileRegistry,
+      registry,
+      makeMockLlm(invoke)
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null and does not throw when the subagent rejects", async () => {
+    const profileRegistry = makeProfileRegistry(makeProfile("coder", "Writes code"));
+    const registry = new ToolRegistry();
+
+    const invoke = jest.fn().mockRejectedValueOnce(new Error("LLM unavailable"));
+
+    await expect(
+      routeRequest("Anything", profileRegistry, registry, makeMockLlm(invoke))
+    ).resolves.toBeNull();
+  });
+
+  it("returns null when no profiles are registered", async () => {
+    const profileRegistry = new AgentProfileRegistry();
+    const registry = new ToolRegistry();
+    const invoke = jest.fn();
+
+    const result = await routeRequest(
+      "Write code",
+      profileRegistry,
+      registry,
+      makeMockLlm(invoke)
+    );
+
+    expect(result).toBeNull();
+    // LLM should not be called when there are no profiles to route to
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("passes profile names and descriptions to the LLM in the routing task", async () => {
+    const profileRegistry = makeProfileRegistry(
+      makeProfile("coder", "Writes source code"),
+      makeProfile("devops", "Manages deployment and CI")
+    );
+    const registry = new ToolRegistry();
+
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({ content: JSON.stringify({ profile: "coder" }), tool_calls: [] });
+
+    const mockLlm = {
+      bindTools: jest.fn().mockReturnValue({ invoke }),
+    } as unknown as BaseChatModel;
+
+    await routeRequest("Implement a feature", profileRegistry, registry, mockLlm);
+
+    // The message passed to the LLM should contain the profile names and descriptions
+    const messages: Array<{ content: string }> = invoke.mock.calls[0][0];
+    const userMsg = messages.find((m) => typeof m.content === "string" && m.content.includes("coder"));
+    expect(userMsg).toBeDefined();
+    expect(userMsg!.content).toContain("coder");
+    expect(userMsg!.content).toContain("devops");
+    expect(userMsg!.content).toContain("Writes source code");
+  });
+
+  it("uses the ROUTER_SYSTEM_PROMPT as the subagent system prompt", async () => {
+    const profileRegistry = makeProfileRegistry(makeProfile("coder", "Writes code"));
+    const registry = new ToolRegistry();
+
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({ content: JSON.stringify({ profile: "coder" }), tool_calls: [] });
+
+    const mockLlm = {
+      bindTools: jest.fn().mockReturnValue({ invoke }),
+    } as unknown as BaseChatModel;
+
+    await routeRequest("Do coding work", profileRegistry, registry, mockLlm);
+
+    // The system message should contain the ROUTER_SYSTEM_PROMPT content
+    const messages: Array<{ content: string }> = invoke.mock.calls[0][0];
+    const sysMsg = messages[0];
+    expect(sysMsg.content).toContain("routing assistant");
+    expect(sysMsg.content).toContain("profile");
+    // Verify ROUTER_SYSTEM_PROMPT is exported and non-empty
+    expect(ROUTER_SYSTEM_PROMPT).toBeTruthy();
+    expect(ROUTER_SYSTEM_PROMPT).toContain("routing assistant");
+  });
+
+  it("parses JSON wrapped in markdown code fences", async () => {
+    const coderProfile = makeProfile("coder", "Writes code");
+    const profileRegistry = makeProfileRegistry(coderProfile);
+    const registry = new ToolRegistry();
+
+    const responseJson = JSON.stringify({ profile: "coder" });
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({
+        content: `\`\`\`json\n${responseJson}\n\`\`\``,
+        tool_calls: [],
+      });
+
+    const result = await routeRequest(
+      "Write a sort function",
+      profileRegistry,
+      registry,
+      makeMockLlm(invoke)
+    );
+
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("coder");
   });
 });

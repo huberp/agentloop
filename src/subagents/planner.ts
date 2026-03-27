@@ -4,6 +4,7 @@ import { logger } from "../logger";
 import { ToolRegistry } from "../tools/registry";
 import { runSubagent } from "./runner";
 import type { WorkspaceInfo } from "../workspace";
+import type { AgentProfileRegistry } from "../agents/registry";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -15,6 +16,8 @@ export interface PlanStep {
   /** Names of registered agent tools required to execute this step. */
   toolsNeeded: string[];
   estimatedComplexity: "low" | "medium" | "high";
+  /** Suggested agent profile name for this step; undefined means use the default agent. */
+  agentProfile?: string;
 }
 
 /** A structured plan decomposing a user request into executable steps. */
@@ -39,7 +42,8 @@ const JSON_SCHEMA_HINT = `{
     {
       "description": "string — what to do in this step",
       "toolsNeeded": ["exact-tool-name", ...],
-      "estimatedComplexity": "low" | "medium" | "high"
+      "estimatedComplexity": "low" | "medium" | "high",
+      "agentProfile": "profile-name | null"
     }
   ]
 }`;
@@ -59,6 +63,9 @@ const PLANNER_SYSTEM_PROMPT =
   `- Each step must have a non-empty description.\n` +
   `- toolsNeeded lists the exact agent tool names required (use only names from the provided list).\n` +
   `- estimatedComplexity must be one of "low", "medium", or "high".\n` +
+  `- agentProfile: optional. Set to one of the available profile names when a step clearly maps\n` +
+  `  to a specialised agent. Set to null if the default agent is sufficient.\n` +
+  `  Available profiles: {{profileList}}\n` +
   `- Produce at least one step.`;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,15 +76,20 @@ const PLANNER_SYSTEM_PROMPT =
 function buildPlannerTask(
   task: string,
   workspaceInfo: WorkspaceInfo,
-  availableTools: string[]
+  availableTools: string[],
+  availableProfiles?: Array<{ name: string; description: string }>
 ): string {
   const toolList = availableTools.length > 0 ? availableTools.join(", ") : "(none)";
-  return (
+  let result =
     `Task: ${task}\n` +
     `Workspace: language=${workspaceInfo.language}, framework=${workspaceInfo.framework}, ` +
     `packageManager=${workspaceInfo.packageManager}, gitInitialized=${workspaceInfo.gitInitialized}\n` +
-    `Available tools: ${toolList}`
-  );
+    `Available tools: ${toolList}`;
+  if (availableProfiles && availableProfiles.length > 0) {
+    const profileList = availableProfiles.map((p) => `${p.name}: ${p.description}`).join("; ");
+    result += `\nAvailable agent profiles: ${profileList}`;
+  }
+  return result;
 }
 
 /**
@@ -128,7 +140,13 @@ function parsePlanFromText(text: string): Plan {
       ? (complexityRaw as "low" | "medium" | "high")
       : "medium";
 
-    return { description, toolsNeeded, estimatedComplexity };
+    const agentProfileRaw = step.agentProfile;
+    const agentProfile: string | undefined =
+      typeof agentProfileRaw === "string" && agentProfileRaw.trim() !== ""
+        ? agentProfileRaw.trim()
+        : undefined;
+
+    return { description, toolsNeeded, estimatedComplexity, agentProfile };
   });
 
   return { steps };
@@ -162,24 +180,37 @@ export function validatePlan(plan: Plan, registry: ToolRegistry): PlanValidation
  *
  * The planner runs without any tools — it only needs to reason and output JSON.
  *
- * @param task          Natural-language description of what the agent should accomplish.
- * @param workspaceInfo Workspace analysis result (language, framework, etc.).
- * @param registry      Tool registry used to list available tool names for the prompt.
- * @param llm           Optional LLM instance — created from config when omitted.
+ * @param task           Natural-language description of what the agent should accomplish.
+ * @param workspaceInfo  Workspace analysis result (language, framework, etc.).
+ * @param registry       Tool registry used to list available tool names for the prompt.
+ * @param llm            Optional LLM instance — created from config when omitted.
+ * @param profileRegistry Optional profile registry; when provided, profile names and descriptions
+ *                        are included in the planner task so the model can annotate each step.
  */
 export async function generatePlan(
   task: string,
   workspaceInfo: WorkspaceInfo,
   registry: ToolRegistry,
-  llm?: BaseChatModel
+  llm?: BaseChatModel,
+  profileRegistry?: AgentProfileRegistry
 ): Promise<Plan> {
   const availableTools = registry.list().map((t) => t.name);
-  const plannerTask = buildPlannerTask(task, workspaceInfo, availableTools);
+  const availableProfiles = profileRegistry
+    ? profileRegistry.list().map((p) => ({ name: p.name, description: p.description }))
+    : undefined;
+  const plannerTask = buildPlannerTask(task, workspaceInfo, availableTools, availableProfiles);
+
+  // Build the system prompt, replacing the {{profileList}} placeholder
+  const profileListStr =
+    availableProfiles && availableProfiles.length > 0
+      ? availableProfiles.map((p) => p.name).join(", ")
+      : "(none)";
+  const systemPrompt = PLANNER_SYSTEM_PROMPT.replace("{{profileList}}", profileListStr);
 
   const result = await runSubagent(
     {
       name: "planner",
-      systemPrompt: PLANNER_SYSTEM_PROMPT,
+      systemPrompt,
       tools: [], // The planner reasons without tools; it only produces a plan
       maxIterations: 3,
     },
@@ -224,7 +255,7 @@ export async function refinePlan(
   const result = await runSubagent(
     {
       name: "planner-refine",
-      systemPrompt: PLANNER_SYSTEM_PROMPT,
+      systemPrompt: PLANNER_SYSTEM_PROMPT.replace("{{profileList}}", "(none)"),
       tools: [],
       maxIterations: 3,
     },

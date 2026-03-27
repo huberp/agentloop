@@ -19,6 +19,7 @@ import { getCachedPromptContext } from "./prompts/context";
 import { registerMcpTools } from "./mcp/bridge";
 import { agentProfileRegistry } from "./agents/registry";
 import { activateProfile } from "./agents/activator";
+import { routeRequest } from "./agents/coordinator";
 import type { AgentRuntimeConfig } from "./agents/types";
 import {
   type Tracer,
@@ -139,6 +140,13 @@ async function executeWithTools(input: string, profileName?: string) {
       logger.warn({ profileName }, "Requested agent profile not found, using defaults");
     } else {
       runtimeConfig = activateProfile(profile);
+    }
+  } else if (appConfig.coordinatorEnabled) {
+    // Auto-route: use the coordinator to select the best profile for this request
+    const routedProfile = await routeRequest(input, agentProfileRegistry, toolRegistry, llm);
+    if (routedProfile) {
+      logger.info({ profileName: routedProfile.name }, "Coordinator auto-selected agent profile");
+      runtimeConfig = activateProfile(routedProfile);
     }
   }
 

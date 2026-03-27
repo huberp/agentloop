@@ -137,6 +137,10 @@ export const appConfig = {
   skillsDir: process.env.SKILLS_DIR ?? "",
   // Agent profiles directory (Task 7.1); auto-loaded on startup
   agentProfilesDir: process.env.AGENT_PROFILES_DIR ?? "",
+  // Coordinator: automatically route requests to the best agent profile when no profile is specified
+  coordinatorEnabled: asBoolean(process.env.COORDINATOR_ENABLED, false),
+  // Coordinator: number of plan steps above which coordinatedExecute() uses the plan+orchestrate path
+  coordinatorPlanThreshold: parseInt(process.env.COORDINATOR_PLAN_THRESHOLD ?? "1", 10),
   // Observability & Tracing (Task 4.1)
   tracingEnabled: asBoolean(process.env.TRACING_ENABLED, false),
   // Directory where per-invocation trace JSON files are written
