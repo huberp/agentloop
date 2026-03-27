@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { search } from "duck-duck-scrape";
+import { DuckDuckGoSearch } from "@langchain/community/tools/duckduckgo_search";
 import { appConfig } from "../config";
 import { logger } from "../logger";
 import type { ToolDefinition } from "./registry";
@@ -17,14 +17,9 @@ export const toolDefinition: ToolDefinition = {
   permissions: "safe",
   execute: async ({ query }: { query: string }) => {
     logger.debug({ tool: "search", query }, "DuckDuckGo search invoked");
-    const { results } = await search(query);
-    // Return only the fields advertised in the tool description: title, link, snippet
-    const output = JSON.stringify(
-      results
-        .slice(0, appConfig.duckduckgoMaxResults)
-        .map(({ title, url, description }) => ({ title, link: url, snippet: description }))
-    );
-    logger.debug({ tool: "search", query, output }, "DuckDuckGo search completed");
-    return output;
+    const searcher = new DuckDuckGoSearch({ maxResults: appConfig.duckduckgoMaxResults });
+    const result = await searcher._call(query);
+    logger.debug({ tool: "search", query, result }, "DuckDuckGo search completed");
+    return result;
   },
 };
