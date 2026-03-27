@@ -33,14 +33,13 @@
     "@langchain/mistralai": "^1.0.7",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "diff": "^8.0.4",
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.3.1",
     "duck-duck-scrape": "^2.2.7",
     "js-tiktoken": "^1.0.21",
     "mathjs": "^15.1.1",
     "pino": "^9.9.0",
     "simple-git": "^3.33.0",
-    "tsx": "^4.21.0",
-    "@langchain/community": "^1.1.25"
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@types/diff": "^7.0.2",

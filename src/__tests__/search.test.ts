@@ -1,21 +1,27 @@
-// Mock DuckDuckGoSearch before importing the tool so we can control its output
-jest.mock("@langchain/community/tools/duckduckgo_search", () => {
-  return {
-    DuckDuckGoSearch: jest.fn().mockImplementation(() => ({
-      _call: jest.fn().mockResolvedValue(
-        JSON.stringify([
-          { title: "Example Result", link: "https://example.com", snippet: "An example snippet." },
-        ])
-      ),
-    })),
-  };
-});
+// Mock duck-duck-scrape before importing the tool so we can control its output
+const mockSearchResults = {
+  noResults: false,
+  vqd: "test-vqd",
+  results: [
+    {
+      hostname: "example.com",
+      url: "https://example.com",
+      title: "Example Result",
+      description: "An example snippet.",
+      rawDescription: "An example snippet.",
+      icon: "",
+    },
+  ],
+};
 
-import { DuckDuckGoSearch } from "@langchain/community/tools/duckduckgo_search";
+const mockSearch = jest.fn().mockResolvedValue(mockSearchResults);
+
+jest.mock("duck-duck-scrape", () => ({
+  search: mockSearch,
+}));
+
 import { toolDefinition } from "../tools/search";
 import { appConfig } from "../config";
-
-const MockDuckDuckGoSearch = DuckDuckGoSearch as jest.MockedClass<typeof DuckDuckGoSearch>;
 
 describe("search tool — toolDefinition metadata", () => {
   it("has name 'search'", () => {
@@ -42,34 +48,44 @@ describe("search tool — toolDefinition metadata", () => {
 
 describe("search tool — execute", () => {
   beforeEach(() => {
-    MockDuckDuckGoSearch.mockClear();
+    mockSearch.mockClear();
+    mockSearch.mockResolvedValue(mockSearchResults);
   });
 
-  it("instantiates DuckDuckGoSearch with maxResults from appConfig", async () => {
-    await toolDefinition.execute({ query: "test query" });
-    expect(MockDuckDuckGoSearch).toHaveBeenCalledWith({
-      maxResults: appConfig.duckduckgoMaxResults,
-    });
-  });
-
-  it("calls _call with the provided query string", async () => {
+  it("calls search() with the provided query string", async () => {
     await toolDefinition.execute({ query: "OpenAI news" });
-
-    const instance = MockDuckDuckGoSearch.mock.results[0]?.value as { _call: jest.Mock };
-    expect(instance._call).toHaveBeenCalledWith("OpenAI news");
+    expect(mockSearch).toHaveBeenCalledWith("OpenAI news");
   });
 
-  it("returns the JSON string produced by DuckDuckGoSearch", async () => {
+  it("returns a JSON array with title, link and snippet fields", async () => {
     const result = await toolDefinition.execute({ query: "TypeScript" });
     const parsed = JSON.parse(result) as Array<{ title: string; link: string; snippet: string }>;
     expect(Array.isArray(parsed)).toBe(true);
-    expect(parsed[0]).toMatchObject({ title: "Example Result", link: "https://example.com" });
+    expect(parsed[0]).toMatchObject({
+      title: "Example Result",
+      link: "https://example.com",
+      snippet: "An example snippet.",
+    });
   });
 
-  it("propagates errors thrown by DuckDuckGoSearch", async () => {
-    MockDuckDuckGoSearch.mockImplementationOnce(() => ({
-      _call: jest.fn().mockRejectedValue(new Error("network error")),
+  it("slices results to duckduckgoMaxResults", async () => {
+    const manyResults = Array.from({ length: 20 }, (_, i) => ({
+      hostname: "example.com",
+      url: `https://example.com/${i}`,
+      title: `Result ${i}`,
+      description: `Snippet ${i}`,
+      rawDescription: `Snippet ${i}`,
+      icon: "",
     }));
+    mockSearch.mockResolvedValueOnce({ noResults: false, vqd: "vqd", results: manyResults });
+
+    const result = await toolDefinition.execute({ query: "many results" });
+    const parsed = JSON.parse(result) as unknown[];
+    expect(parsed.length).toBe(appConfig.duckduckgoMaxResults);
+  });
+
+  it("propagates errors thrown by duck-duck-scrape search()", async () => {
+    mockSearch.mockRejectedValueOnce(new Error("network error"));
     await expect(toolDefinition.execute({ query: "fail" })).rejects.toThrow("network error");
   });
 });
