@@ -103,6 +103,8 @@ export const appConfig = {
   recordLlmResponses: asBoolean(process.env.RECORD_LLM_RESPONSES, false),
   // Directory where recorded fixture files are stored (also used by MockChatModel.fromFixture)
   llmFixtureDir: process.env.LLM_FIXTURE_DIR ?? "tests/fixtures/llm-responses",
+  // DuckDuckGo search tool: maximum number of results to return per query (default: 5)
+  duckduckgoMaxResults: parseInt(process.env.DUCKDUCKGO_MAX_RESULTS ?? "5", 10),
   // Skills directory (Task 6.1); auto-loaded on startup
   skillsDir: process.env.SKILLS_DIR ?? "",
   // Agent profiles directory (Task 7.1); auto-loaded on startup
