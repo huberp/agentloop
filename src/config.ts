@@ -107,6 +107,25 @@ export const appConfig = {
   skillsDir: process.env.SKILLS_DIR ?? "",
   // Agent profiles directory (Task 7.1); auto-loaded on startup
   agentProfilesDir: process.env.AGENT_PROFILES_DIR ?? "",
+  // Web search & fetch tools (Task 2.9)
+  // Search backend: "brave" | "tavily" | "none" (default: "none" — disabled until configured)
+  webSearchProvider: (process.env.WEB_SEARCH_PROVIDER ?? "none") as "brave" | "tavily" | "none",
+  braveApiKey: process.env.BRAVE_API_KEY ?? "",
+  tavilyApiKey: process.env.TAVILY_API_KEY ?? "",
+  // Comma-separated domains that are always rejected (merged with built-in defaults)
+  webDomainBlocklist: asStringArray(process.env.WEB_DOMAIN_BLOCKLIST),
+  // When non-empty, only these domains are permitted
+  webDomainAllowlist: asStringArray(process.env.WEB_DOMAIN_ALLOWLIST),
+  // Allow http:// URLs (insecure; default: false — https only)
+  webAllowHttp: asBoolean(process.env.WEB_ALLOW_HTTP, false),
+  // Maximum HTTP response body size in bytes (default: 5 MB)
+  webMaxResponseBytes: parseInt(process.env.WEB_MAX_RESPONSE_BYTES ?? "5242880", 10),
+  // Maximum Markdown output length in characters (default: 20 000)
+  webMaxContentChars: parseInt(process.env.WEB_MAX_CONTENT_CHARS ?? "20000", 10),
+  // User-Agent header sent with fetch requests
+  webUserAgent: process.env.WEB_USER_AGENT ?? "AgentLoop/1.0",
+  // Fetch timeout in milliseconds (default: 15 s)
+  webFetchTimeoutMs: parseInt(process.env.WEB_FETCH_TIMEOUT_MS ?? "15000", 10),
   // Observability & Tracing (Task 4.1)
   tracingEnabled: asBoolean(process.env.TRACING_ENABLED, false),
   // Directory where per-invocation trace JSON files are written

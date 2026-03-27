@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>How to Write Great Unit Tests</title>
+</head>
+<body>
+  <header>
+    <nav>
+      <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/blog">Blog</a></li>
+        <li><a href="/about">About</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <article>
+      <h1>How to Write Great Unit Tests</h1>
+      <p class="byline">By Jane Doe · March 2025</p>
+      <p class="excerpt">Unit tests are the foundation of a robust software project.</p>
+
+      <p>Writing good unit tests takes practice, but the core principles are straightforward.</p>
+
+      <h2>Keep Tests Small and Focused</h2>
+      <p>Each test should verify exactly one behaviour. If a test fails, you should know immediately what went wrong without reading a wall of assertions.</p>
+
+      <h2>Use Descriptive Names</h2>
+      <p>A test name like <code>should_return_error_when_input_is_null</code> is far more useful than <code>test1</code>. Treat the test name as the first line of your bug report.</p>
+
+      <h2>Avoid Shared State</h2>
+      <p>Tests that share mutable state can fail in non-obvious ways depending on execution order. Prefer independent fixtures that are created fresh for every test.</p>
+
+      <pre><code>// Good: isolated setup
+beforeEach(() => {
+  db = new InMemoryDatabase();
+});
+</code></pre>
+
+      <p>Following these principles will make your test suite a safety net you can trust.</p>
+    </article>
+  </main>
+
+  <footer>
+    <p>© 2025 Example Blog. All rights reserved.</p>
+    <ul>
+      <li><a href="/privacy">Privacy</a></li>
+      <li><a href="/terms">Terms</a></li>
+    </ul>
+  </footer>
+</body>
+</html>
