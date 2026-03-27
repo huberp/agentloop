@@ -348,3 +348,116 @@ describe("refinePlan", () => {
     expect(validation.valid).toBe(true);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// agentProfile field in PlanStep
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("generatePlan — agentProfile field", () => {
+  it("parses agentProfile from LLM output when present", async () => {
+    const planWithProfiles: Plan = {
+      steps: [
+        {
+          description: "Plan the work",
+          toolsNeeded: [],
+          estimatedComplexity: "low",
+          agentProfile: "planner",
+        },
+        {
+          description: "Write code",
+          toolsNeeded: ["file-write"],
+          estimatedComplexity: "medium",
+          agentProfile: "coder",
+        },
+      ],
+    };
+
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({ content: JSON.stringify(planWithProfiles), tool_calls: [] });
+
+    const registry = makeRegistry("file-write");
+    const plan = await generatePlan("Build a feature", MOCK_WORKSPACE, registry, makeMockLlm(invoke));
+
+    expect(plan.steps[0].agentProfile).toBe("planner");
+    expect(plan.steps[1].agentProfile).toBe("coder");
+  });
+
+  it("leaves agentProfile undefined when the field is absent", async () => {
+    const invoke = jest.fn().mockResolvedValueOnce({
+      content: JSON.stringify({
+        steps: [{ description: "do something", toolsNeeded: [], estimatedComplexity: "low" }],
+      }),
+      tool_calls: [],
+    });
+
+    const plan = await generatePlan("task", MOCK_WORKSPACE, new ToolRegistry(), makeMockLlm(invoke));
+    expect(plan.steps[0].agentProfile).toBeUndefined();
+  });
+
+  it("leaves agentProfile undefined when the field is null", async () => {
+    const invoke = jest.fn().mockResolvedValueOnce({
+      content: JSON.stringify({
+        steps: [
+          { description: "step", toolsNeeded: [], estimatedComplexity: "low", agentProfile: null },
+        ],
+      }),
+      tool_calls: [],
+    });
+
+    const plan = await generatePlan("task", MOCK_WORKSPACE, new ToolRegistry(), makeMockLlm(invoke));
+    expect(plan.steps[0].agentProfile).toBeUndefined();
+  });
+
+  it("leaves agentProfile undefined when the field is an empty string", async () => {
+    const invoke = jest.fn().mockResolvedValueOnce({
+      content: JSON.stringify({
+        steps: [
+          { description: "step", toolsNeeded: [], estimatedComplexity: "low", agentProfile: "" },
+        ],
+      }),
+      tool_calls: [],
+    });
+
+    const plan = await generatePlan("task", MOCK_WORKSPACE, new ToolRegistry(), makeMockLlm(invoke));
+    expect(plan.steps[0].agentProfile).toBeUndefined();
+  });
+
+  it("includes profile list in the planner task when profileRegistry is provided", async () => {
+    const invoke = jest.fn().mockResolvedValueOnce({
+      content: JSON.stringify({
+        steps: [{ description: "step", toolsNeeded: [], estimatedComplexity: "low" }],
+      }),
+      tool_calls: [],
+    });
+
+    const mockLlm = {
+      bindTools: jest.fn().mockReturnValue({ invoke }),
+    } as unknown as BaseChatModel;
+
+    // Build a minimal profile registry
+    const { AgentProfileRegistry } = await import("../agents/registry");
+    const profileRegistry = new AgentProfileRegistry();
+    profileRegistry.register({
+      name: "coder",
+      description: "Writes and edits source code",
+      version: "1.0.0",
+    });
+    profileRegistry.register({
+      name: "devops",
+      description: "Manages deployments",
+      version: "1.0.0",
+    });
+
+    await generatePlan("task", MOCK_WORKSPACE, new ToolRegistry(), mockLlm, profileRegistry);
+
+    // The user message should include the profile names
+    const messages: Array<{ content: string }> = invoke.mock.calls[0][0];
+    const userMsg = messages.find(
+      (m) => typeof m.content === "string" && m.content.includes("task")
+    );
+    expect(userMsg).toBeDefined();
+    expect(userMsg!.content).toContain("coder");
+    expect(userMsg!.content).toContain("devops");
+  });
+});
