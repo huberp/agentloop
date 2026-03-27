@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sample Article</title>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <nav><a href="/">Home</a> | <a href="/about">About</a></nav>
+  <article>
+    <h1>Understanding TypeScript Generics</h1>
+    <p class="byline">By Jane Developer</p>
+    <p>Generics allow you to write reusable, type-safe code that works with multiple types
+    while still maintaining full type safety. They are one of the most powerful features of TypeScript.</p>
+    <pre><code class="language-typescript">
+function identity&lt;T&gt;(arg: T): T {
+  return arg;
+}
+    </code></pre>
+    <p>This pattern is widely used in libraries like React and lodash to provide
+    strongly-typed utility functions.</p>
+    <h2>Constraints</h2>
+    <p>You can constrain a generic to only accept certain types using the <code>extends</code> keyword.</p>
+    <pre><code class="language-typescript">
+function getLength&lt;T extends { length: number }&gt;(arg: T): number {
+  return arg.length;
+}
+    </code></pre>
+    <p>This ensures that only types with a <code>length</code> property can be passed to this function.</p>
+  </article>
+  <footer>© 2024 Example Blog. All rights reserved.</footer>
+  <script>console.log("tracking")</script>
+  <style>.ad { display: block; }</style>
+</body>
+</html>
