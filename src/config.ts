@@ -105,6 +105,14 @@ export const appConfig = {
   llmFixtureDir: process.env.LLM_FIXTURE_DIR ?? "tests/fixtures/llm-responses",
   // DuckDuckGo search tool: maximum number of results to return per query (default: 5)
   duckduckgoMaxResults: parseInt(process.env.DUCKDUCKGO_MAX_RESULTS ?? "5", 10),
+  // Web fetch tool (Task 2.9a): URL security and content extraction settings
+  webDomainBlocklist: asStringArray(process.env.WEB_DOMAIN_BLOCKLIST),
+  webDomainAllowlist: asStringArray(process.env.WEB_DOMAIN_ALLOWLIST),
+  webAllowHttp: asBoolean(process.env.WEB_ALLOW_HTTP, false),
+  webMaxResponseBytes: parseInt(process.env.WEB_MAX_RESPONSE_BYTES ?? "5242880", 10),
+  webMaxContentChars: parseInt(process.env.WEB_MAX_CONTENT_CHARS ?? "20000", 10),
+  webUserAgent: process.env.WEB_USER_AGENT ?? "AgentLoop/1.0",
+  webFetchTimeoutMs: parseInt(process.env.WEB_FETCH_TIMEOUT_MS ?? "15000", 10),
   // Runtime context injection: when enabled, injects current date/time, OS platform, and Node.js
   // version into the system prompt as a synthetic instruction block (default: true)
   runtimeContextEnabled: asBoolean(process.env.RUNTIME_CONTEXT_ENABLED, true),
