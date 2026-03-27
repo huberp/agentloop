@@ -443,6 +443,28 @@ User: Plan and execute: add a health-check endpoint to the Express app
 ```
 → LLM calls `plan-and-run` → planner fires → orchestrator runs each step as a subagent
 
+More CLI prompts that cause the LLM to invoke `plan-and-run`:
+
+```
+User: Plan and run: migrate all callback-style async functions in src/ to async/await
+```
+→ planner decomposes into steps (search callbacks → convert each file → run tests) → each step executes as isolated subagent
+
+```
+User: Plan and execute: add JSDoc comments to every exported function in src/
+```
+→ planner creates one step per file → orchestrator runs them sequentially
+
+```
+User: Break this down into steps and execute: set up ESLint with the Airbnb config
+```
+→ planner emits steps (install deps → write config → fix violations → run lint) → orchestrator runs each with retry on failure
+
+```
+User: Plan and run with abort on failure: add input validation to all POST handlers in src/routes/
+```
+→ LLM calls `plan-and-run` with `onStepFailure: "abort"` → plan executes until the first failing step
+
 ---
 
 ## Coordinator — Automatic Profile Routing and Plan-Aware Orchestration
@@ -479,6 +501,46 @@ const result = await agentExecutor.invoke("Write a function to reverse a string"
 The routing subagent receives your request and the list of registered profiles (name + description),
 then returns the single best match as JSON: `{ "profile": "coder" }`. If no profile clearly fits it
 returns `null` and the default (no-profile) loop is used.
+
+#### CLI prompt examples with automatic routing
+
+Start the CLI with coordinator routing enabled:
+
+```bash
+COORDINATOR_ENABLED=true npm run start
+```
+
+Then type prompts — the coordinator selects the best profile before the agent loop runs:
+
+```
+User: Write a TypeScript utility function to deep-clone an object
+```
+→ coordinator selects **`coder`** (temperature 0.2, tools include file-write/edit/run)
+
+```
+User: Review the changes in src/streaming.ts and flag any issues
+```
+→ coordinator selects **`reviewer`** (temperature 0.3, read-only tools: file-read, git-diff, …)
+
+```
+User: Check the Dockerfile and CI workflow for security misconfigurations
+```
+→ coordinator selects **`security-auditor`** (temperature 0.1, OWASP-focused instructions)
+
+```
+User: Set up a GitHub Actions workflow that runs tests on every push
+```
+→ coordinator selects **`devops`** (temperature 0.2, shell + git tools)
+
+```
+User: Break down the task of migrating to ESM modules into actionable steps
+```
+→ coordinator selects **`planner`** (temperature 0.7, planning-oriented tools)
+
+```
+User: What is the capital of France?
+```
+→ coordinator returns `null` — no profile clearly fits → default loop runs without profile
 
 ### Programmatic usage: `coordinatedExecute()`
 
