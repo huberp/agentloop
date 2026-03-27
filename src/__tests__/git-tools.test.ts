@@ -32,6 +32,12 @@ const gitDiff = () => require("../tools/git-diff").toolDefinition;
 const gitCommit = () => require("../tools/git-commit").toolDefinition;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const gitLog = () => require("../tools/git-log").toolDefinition;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const gitBranch = () => require("../tools/git-branch").toolDefinition;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const gitCheckout = () => require("../tools/git-checkout").toolDefinition;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const gitPush = () => require("../tools/git-push").toolDefinition;
 
 // ---------------------------------------------------------------------------
 // git-status
@@ -317,5 +323,293 @@ describe("git-log — outside a Git repository", () => {
 
     expect(result.error).toBeDefined();
     expect(result.commits).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// git-branch
+// ---------------------------------------------------------------------------
+
+describe("git-branch — metadata", () => {
+  it("has the correct name and permission level", () => {
+    expect(gitBranch().name).toBe("git-branch");
+    expect(gitBranch().permissions).toBe("cautious");
+  });
+});
+
+describe("git-branch — list", () => {
+  let repo: string;
+
+  beforeAll(async () => {
+    repo = await makeGitRepo();
+    const git = simpleGit(repo);
+    await fs.writeFile(path.join(repo, "init.txt"), "init");
+    await git.add(".");
+    await git.commit("initial commit");
+    // Create an extra branch so the list has at least two entries
+    await git.branch(["feature/test"]);
+  });
+
+  afterAll(() => cleanGitRepo(repo));
+
+  it("lists all local branches", async () => {
+    const raw = await gitBranch().execute({ action: "list", cwd: repo });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(true);
+    const names = result.branches.map((b: { name: string }) => b.name);
+    expect(names).toContain("feature/test");
+  });
+
+  it("reports which branch is current", async () => {
+    const raw = await gitBranch().execute({ action: "list", cwd: repo });
+    const result = JSON.parse(raw);
+
+    expect(typeof result.current).toBe("string");
+    const current = result.branches.find((b: { current: boolean }) => b.current);
+    expect(current).toBeDefined();
+    expect(current.name).toBe(result.current);
+  });
+});
+
+describe("git-branch — create", () => {
+  let repo: string;
+
+  beforeEach(async () => {
+    repo = await makeGitRepo();
+    const git = simpleGit(repo);
+    await fs.writeFile(path.join(repo, "init.txt"), "init");
+    await git.add(".");
+    await git.commit("initial commit");
+  });
+
+  afterEach(() => cleanGitRepo(repo));
+
+  it("creates a new branch from HEAD", async () => {
+    const raw = await gitBranch().execute({ action: "create", branch: "my-feature", cwd: repo });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(true);
+
+    // Verify branch exists
+    const listRaw = await gitBranch().execute({ action: "list", cwd: repo });
+    const list = JSON.parse(listRaw);
+    const names = list.branches.map((b: { name: string }) => b.name);
+    expect(names).toContain("my-feature");
+  });
+
+  it("returns an error when branch name is missing", async () => {
+    const raw = await gitBranch().execute({ action: "create", cwd: repo });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+});
+
+describe("git-branch — delete", () => {
+  let repo: string;
+
+  beforeEach(async () => {
+    repo = await makeGitRepo();
+    const git = simpleGit(repo);
+    await fs.writeFile(path.join(repo, "init.txt"), "init");
+    await git.add(".");
+    await git.commit("initial commit");
+    await git.branch(["to-delete"]);
+  });
+
+  afterEach(() => cleanGitRepo(repo));
+
+  it("deletes an existing branch", async () => {
+    const raw = await gitBranch().execute({ action: "delete", branch: "to-delete", cwd: repo });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(true);
+
+    const listRaw = await gitBranch().execute({ action: "list", cwd: repo });
+    const list = JSON.parse(listRaw);
+    const names = list.branches.map((b: { name: string }) => b.name);
+    expect(names).not.toContain("to-delete");
+  });
+
+  it("returns an error when deleting a non-existent branch", async () => {
+    const raw = await gitBranch().execute({
+      action: "delete",
+      branch: "does-not-exist",
+      cwd: repo,
+    });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+});
+
+describe("git-branch — outside a Git repository", () => {
+  it("returns an error gracefully when cwd is not a git repo", async () => {
+    const raw = await gitBranch().execute({ action: "list", cwd: os.tmpdir() });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// git-checkout
+// ---------------------------------------------------------------------------
+
+describe("git-checkout — metadata", () => {
+  it("has the correct name and permission level", () => {
+    expect(gitCheckout().name).toBe("git-checkout");
+    expect(gitCheckout().permissions).toBe("cautious");
+  });
+});
+
+describe("git-checkout — switching branches", () => {
+  let repo: string;
+
+  beforeEach(async () => {
+    repo = await makeGitRepo();
+    const git = simpleGit(repo);
+    await fs.writeFile(path.join(repo, "init.txt"), "init");
+    await git.add(".");
+    await git.commit("initial commit");
+    await git.branch(["other-branch"]);
+  });
+
+  afterEach(() => cleanGitRepo(repo));
+
+  it("switches to an existing branch", async () => {
+    const raw = await gitCheckout().execute({ branch: "other-branch", cwd: repo });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(true);
+
+    const git = simpleGit(repo);
+    const status = await git.status();
+    expect(status.current).toBe("other-branch");
+  });
+
+  it("returns an error when the target branch does not exist", async () => {
+    const raw = await gitCheckout().execute({ branch: "no-such-branch", cwd: repo });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+});
+
+describe("git-checkout — create and switch (newBranch)", () => {
+  let repo: string;
+
+  beforeEach(async () => {
+    repo = await makeGitRepo();
+    const git = simpleGit(repo);
+    await fs.writeFile(path.join(repo, "init.txt"), "init");
+    await git.add(".");
+    await git.commit("initial commit");
+  });
+
+  afterEach(() => cleanGitRepo(repo));
+
+  it("creates a new branch and checks it out", async () => {
+    // Use the actual current branch as start point (could be "main" or "master")
+    const git = simpleGit(repo);
+    const status = await git.status();
+    const currentBranch = status.current!;
+
+    const raw = await gitCheckout().execute({
+      branch: currentBranch,
+      newBranch: "feat/new",
+      cwd: repo,
+    });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(true);
+    expect(result.branch).toBe("feat/new");
+
+    const afterStatus = await git.status();
+    expect(afterStatus.current).toBe("feat/new");
+  });
+});
+
+describe("git-checkout — outside a Git repository", () => {
+  it("returns an error gracefully when cwd is not a git repo", async () => {
+    const raw = await gitCheckout().execute({ branch: "main", cwd: os.tmpdir() });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// git-push
+// ---------------------------------------------------------------------------
+
+describe("git-push — metadata", () => {
+  it("has the correct name and permission level", () => {
+    expect(gitPush().name).toBe("git-push");
+    expect(gitPush().permissions).toBe("dangerous");
+  });
+});
+
+describe("git-push — pushing to a local remote", () => {
+  let origin: string;
+  let clone: string;
+
+  beforeEach(async () => {
+    // Create a bare repo that acts as the "remote"
+    origin = await fs.mkdtemp(path.join(os.tmpdir(), "agentloop-git-origin-"));
+    const originGit = simpleGit(origin);
+    await originGit.init(["--bare"]);
+
+    // Clone the bare repo to get a working copy with remote configured
+    clone = await fs.mkdtemp(path.join(os.tmpdir(), "agentloop-git-clone-"));
+    const cloneGit = simpleGit(clone);
+    await cloneGit.clone(origin, clone);
+    await cloneGit.addConfig("user.email", "test@agentloop.test");
+    await cloneGit.addConfig("user.name", "AgentLoop Test");
+
+    // Create an initial commit so there is something to push
+    await fs.writeFile(path.join(clone, "init.txt"), "init");
+    await cloneGit.add(".");
+    await cloneGit.commit("initial commit");
+  });
+
+  afterEach(async () => {
+    await fs.rm(origin, { recursive: true, force: true });
+    await fs.rm(clone, { recursive: true, force: true });
+  });
+
+  it("pushes the current branch to origin", async () => {
+    const raw = await gitPush().execute({ cwd: clone });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(true);
+    expect(result.remote).toBe("origin");
+    expect(typeof result.branch).toBe("string");
+  });
+
+  it("pushes a named branch to origin", async () => {
+    const git = simpleGit(clone);
+    const status = await git.status();
+    const currentBranch = status.current!;
+
+    const raw = await gitPush().execute({ remote: "origin", branch: currentBranch, cwd: clone });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(true);
+    expect(result.branch).toBe(currentBranch);
+  });
+
+  it("returns an error when pushing to a non-existent remote", async () => {
+    const raw = await gitPush().execute({ remote: "no-such-remote", cwd: clone });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
   });
 });
