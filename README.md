@@ -7,6 +7,7 @@ AgentLoop is a TypeScript-first [LangChain](https://js.langchain.com/) runtime f
 - **Iterative agent loop** — LLM calls tools, receives results as `ToolMessage` entries, and loops until the task is done or `MAX_ITERATIONS` is reached.
 - **Dynamic tool discovery** — drop a `.ts` file exporting `toolDefinition` into `src/tools/` and it is auto-registered at startup; no central list to edit.
 - **16 built-in tools** — filesystem read/write/edit/delete, shell execution, code search, code runner, unified diff/patch, and four git tools.
+- **Resilient web search** — DuckDuckGo search includes retry with back-off, configurable throttling, and in-memory caching to reduce transient failures.
 - **Security controls** — path traversal prevention, shell injection detection, per-tool permission levels (`safe` / `cautious` / `dangerous`), blocklist/allowlist, output size limits, and concurrency cap.
 - **MCP integration** — connect stdio or SSE MCP servers; their tools appear alongside built-in tools.
 - **Streaming mode** — assembles `ToolCallChunk` fragments and streams text tokens to the CLI as they arrive.

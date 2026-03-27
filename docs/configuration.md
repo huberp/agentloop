@@ -43,6 +43,21 @@ All runtime settings are loaded from environment variables via `src/config.ts` u
 
 ---
 
+## DuckDuckGo Search
+
+| Variable | Default | Type | Description |
+|---|---|---|---|
+| `DUCKDUCKGO_MAX_RESULTS` | `5` | int | Maximum number of results returned by the `search` tool per query. |
+| `DUCKDUCKGO_MIN_DELAY_MS` | `1000` | int | Minimum delay between outbound DuckDuckGo requests to reduce upstream throttling. `0` disables delay. |
+| `DUCKDUCKGO_RETRY_MAX` | `2` | int | Maximum retries for transient DuckDuckGo failures (network, timeout, 429, 5xx). |
+| `DUCKDUCKGO_RETRY_BASE_DELAY_MS` | `400` | int | Base delay in milliseconds for exponential back-off between search retries. |
+| `DUCKDUCKGO_RATE_LIMIT_PENALTY_MS` | `1000` | int | Additional delay added when a retry follows a detected rate-limit (429) failure. |
+| `DUCKDUCKGO_CACHE_TTL_MS` | `300000` | int | In-memory cache TTL for search results in milliseconds. `0` disables caching. |
+| `DUCKDUCKGO_CACHE_MAX_ENTRIES` | `128` | int | Maximum number of cached search queries retained in memory. `0` disables caching. |
+| `DUCKDUCKGO_SERVE_STALE_ON_ERROR` | `true` | bool | When `true`, serves stale cached results if upstream search fails after retries. |
+
+---
+
 ## Tool Security
 
 | Variable | Default | Type | Description |

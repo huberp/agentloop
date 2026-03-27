@@ -105,6 +105,21 @@ export const appConfig = {
   llmFixtureDir: process.env.LLM_FIXTURE_DIR ?? "tests/fixtures/llm-responses",
   // DuckDuckGo search tool: maximum number of results to return per query (default: 5)
   duckduckgoMaxResults: parseInt(process.env.DUCKDUCKGO_MAX_RESULTS ?? "5", 10),
+  // DuckDuckGo search reliability controls
+  // Minimum delay in milliseconds between outbound DuckDuckGo requests (0 = no delay)
+  duckduckgoMinDelayMs: parseInt(process.env.DUCKDUCKGO_MIN_DELAY_MS ?? "1000", 10),
+  // Maximum number of retries for transient DuckDuckGo failures
+  duckduckgoRetryMax: parseInt(process.env.DUCKDUCKGO_RETRY_MAX ?? "2", 10),
+  // Base delay in milliseconds for exponential retry back-off
+  duckduckgoRetryBaseDelayMs: parseInt(process.env.DUCKDUCKGO_RETRY_BASE_DELAY_MS ?? "400", 10),
+  // Extra delay in milliseconds for rate-limit responses (HTTP 429)
+  duckduckgoRateLimitPenaltyMs: parseInt(process.env.DUCKDUCKGO_RATE_LIMIT_PENALTY_MS ?? "1000", 10),
+  // In-memory query cache TTL in milliseconds (0 = disabled)
+  duckduckgoCacheTtlMs: parseInt(process.env.DUCKDUCKGO_CACHE_TTL_MS ?? "300000", 10),
+  // Maximum in-memory cache entries (0 = disabled)
+  duckduckgoCacheMaxEntries: parseInt(process.env.DUCKDUCKGO_CACHE_MAX_ENTRIES ?? "128", 10),
+  // Serve stale cached search results when upstream fails
+  duckduckgoServeStaleOnError: asBoolean(process.env.DUCKDUCKGO_SERVE_STALE_ON_ERROR, true),
   // Web fetch tool (Task 2.9a): URL security and content extraction settings
   webDomainBlocklist: asStringArray(process.env.WEB_DOMAIN_BLOCKLIST),
   webDomainAllowlist: asStringArray(process.env.WEB_DOMAIN_ALLOWLIST),
