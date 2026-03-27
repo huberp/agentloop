@@ -90,6 +90,8 @@ function compareSemver(a: string, b: string): number {
 export class PromptRegistry {
   private templates = new Map<string, PromptTemplate>();
   private versionHistory = new Map<string, PromptTemplate[]>();
+  /** Serialises concurrent saveHistory calls to avoid partial writes. */
+  private _saveChain: Promise<void> = Promise.resolve();
 
   /** Register a template. Updates the active pointer and appends to version history if versioned. */
   register(template: PromptTemplate): void {
@@ -100,9 +102,11 @@ export class PromptRegistry {
       this.versionHistory.set(template.name, history);
     }
     logger.debug({ templateName: template.name }, "Prompt template registered");
-    this.saveHistory().catch((err) => {
-      logger.warn({ error: (err as Error).message }, "Failed to save prompt history");
-    });
+    this._saveChain = this._saveChain
+      .then(() => this._writeToDisk())
+      .catch((err) => {
+        logger.warn({ error: (err as Error).message }, "Failed to save prompt history");
+      });
   }
 
   /** Retrieve a template by name, or `undefined` if not found. */
@@ -146,8 +150,16 @@ export class PromptRegistry {
   /**
    * Persist the full version history to `appConfig.promptHistoryFile`.
    * No-op if the path is not configured.
+   * Awaits any in-flight fire-and-forget writes first so the final state is always written.
    */
   async saveHistory(): Promise<void> {
+    // Wait for any queued fire-and-forget writes before doing an explicit save
+    await this._saveChain;
+    await this._writeToDisk();
+  }
+
+  /** Internal: write current version history to disk. Not serialised on its own — use saveHistory(). */
+  private async _writeToDisk(): Promise<void> {
     const filePath = appConfig.promptHistoryFile;
     if (!filePath) return;
     const data: Record<string, PromptTemplate[]> = {};
