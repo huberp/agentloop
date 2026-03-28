@@ -15,6 +15,7 @@
     "start": "npx tsx src/index.ts",
     "startCli": "npx tsx src/start-cli.ts",
     "startTui": "npx tsx src/start-tui.ts",
+    "oneshot": "npx tsx src/start-oneshot.ts",
     "start:prod": "node dist/index.js",
     "test": "jest",
     "test:e2e": "jest --config jest.e2e.config.js",
