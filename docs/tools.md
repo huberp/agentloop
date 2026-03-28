@@ -43,7 +43,18 @@ calculate({ expression: "(3^2 + 4^2) ^ 0.5" })
 **Permission:** `safe`  
 **File:** `src/tools/search.ts`
 
-Placeholder web-search tool. Currently returns a stub response; replace the `execute` function with a real search API integration.
+Web search tool with pluggable provider support. Returns a JSON array of results with `title`, `link`, and `snippet` fields. On failure, returns a JSON object `{ error, query, results: [] }`.
+
+The active provider is selected via `WEB_SEARCH_PROVIDER`:
+
+| Value | Description |
+|---|---|
+| `duckduckgo` (default) | Scrapes DuckDuckGo — no API key required |
+| `tavily` | [Tavily](https://tavily.com) REST API — requires `TAVILY_API_KEY` |
+| `langsearch` | [LangSearch](https://langsearch.com) REST API — requires `LANGSEARCH_API_KEY` |
+| `none` | Disabled — always returns an empty results array |
+
+See [docs/search-providers.md](search-providers.md) for full setup instructions and configuration reference.
 
 ### Inputs
 
@@ -53,7 +64,23 @@ Placeholder web-search tool. Currently returns a stub response; replace the `exe
 
 ### Output
 
-A plain string with the search results (currently: `"Search results for: <query>"`).
+JSON array of result objects:
+
+```json
+[
+  { "title": "Example", "link": "https://example.com", "snippet": "…" }
+]
+```
+
+### Configuration (selected keys)
+
+| Variable | Default | Description |
+|---|---|---|
+| `WEB_SEARCH_PROVIDER` | `duckduckgo` | Active provider |
+| `TAVILY_API_KEY` | — | Required when provider is `tavily` |
+| `LANGSEARCH_API_KEY` | — | Required when provider is `langsearch` |
+| `DUCKDUCKGO_MAX_RESULTS` | `5` | DDG result cap |
+| `DUCKDUCKGO_CACHE_TTL_MS` | `300000` | Shared cache TTL (all providers) |
 
 ---
 
