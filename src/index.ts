@@ -34,6 +34,15 @@ import { runInkTui } from "./ui/tui";
 // Re-export the singleton tool registry (created in tools/registry.ts)
 export { toolRegistry };
 
+// Re-export the agent profile registry for use by external entry points (e.g. start-oneshot.ts)
+export { agentProfileRegistry };
+
+/** Options accepted by the public agent executor API. */
+export interface AgentRunOptions {
+  /** When set, replaces the auto-generated system prompt for this invocation. */
+  systemPromptOverride?: string;
+}
+
 // Instantiate the LLM at module level
 const llm = createLLM(appConfig);
 
@@ -80,8 +89,10 @@ function getTracer(): Tracer {
 /**
  * Load tools from the tools/ directory and bind them to the LLM.
  * Called automatically on the first invocation of executeWithTools().
+ * Also exported so that external entry points (e.g. start-oneshot.ts) can
+ * eagerly initialise the tool registry before invoking tools directly.
  */
-async function ensureInitialized(): Promise<void> {
+export async function ensureInitialized(): Promise<void> {
   if (!_initPromise) {
     _initPromise = toolRegistry
       .loadFromDirectory(path.join(__dirname, "tools"))
@@ -127,7 +138,7 @@ function extractContent(msg: AIMessage): string {
  * Agentic loop: invoke the LLM repeatedly until it returns a response with no
  * tool calls, or until MAX_ITERATIONS is reached.
  */
-async function executeWithTools(input: string, profileName?: string) {
+async function executeWithTools(input: string, profileName?: string, runOptions?: AgentRunOptions) {
   // Ensure tools are loaded and LLM is bound on first call
   await ensureInitialized();
   await chatHistory.addMessage(new HumanMessage(input));
@@ -180,14 +191,15 @@ async function executeWithTools(input: string, profileName?: string) {
 
   // Aggregate runtime context: workspace, tools, active instructions (TTL-cached)
   const promptCtx = await getCachedPromptContext();
-  const systemMessage = new SystemMessage(
-    await getSystemPrompt({
-      tools: promptCtx.tools.map((t) => t.name),
-      workspace: promptCtx.workspace,
-      instructions: promptCtx.instructions,
-      skills: promptCtx.skills,
-    })
-  );
+  const systemMessageText = runOptions?.systemPromptOverride
+    ? runOptions.systemPromptOverride
+    : await getSystemPrompt({
+        tools: promptCtx.tools.map((t) => t.name),
+        workspace: promptCtx.workspace,
+        instructions: promptCtx.instructions,
+        skills: promptCtx.skills,
+      });
+  const systemMessage = new SystemMessage(systemMessageText);
   let iteration = 0;
 
   while (true) {
@@ -350,7 +362,7 @@ async function executeWithTools(input: string, profileName?: string) {
  * Streaming variant of executeWithTools.
  * Builds the dependency object from module-level state and delegates to streamWithTools.
  */
-async function* executeWithToolsStream(input: string, profileName?: string): AsyncGenerator<string> {
+async function* executeWithToolsStream(input: string, profileName?: string, runOptions?: AgentRunOptions): AsyncGenerator<string> {
   await ensureInitialized();
 
   // Resolve agent profile and apply runtime overrides
@@ -387,14 +399,15 @@ async function* executeWithToolsStream(input: string, profileName?: string): Asy
   }
 
   const promptCtx = await getCachedPromptContext();
-  const systemMessage = new SystemMessage(
-    await getSystemPrompt({
-      tools: promptCtx.tools.map((t) => t.name),
-      workspace: promptCtx.workspace,
-      instructions: promptCtx.instructions,
-      skills: promptCtx.skills,
-    })
-  );
+  const systemMessageText = runOptions?.systemPromptOverride
+    ? runOptions.systemPromptOverride
+    : await getSystemPrompt({
+        tools: promptCtx.tools.map((t) => t.name),
+        workspace: promptCtx.workspace,
+        instructions: promptCtx.instructions,
+        skills: promptCtx.skills,
+      });
+  const systemMessage = new SystemMessage(systemMessageText);
 
   yield* streamWithTools(input, {
     llmWithTools: llmWithToolsForRun,

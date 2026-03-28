@@ -80,6 +80,7 @@ for await (const chunk of agentExecutor.stream("What files changed recently?")) 
 | `npm run start` | Start the agent using `UI_MODE` from the environment |
 | `npm run startCli` | Start the readline CLI agent (dev mode via tsx) |
 | `npm run startTui` | Start the Ink TUI agent (dev mode via tsx) |
+| `npm run oneshot` | Run a one-shot command and exit (see below) |
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run build:clean` | Remove `dist/` then compile |
 | `npm run start:prod` | Start the agent from compiled `dist/` |
@@ -87,6 +88,76 @@ for await (const chunk of agentExecutor.stream("What files changed recently?")) 
 | `npm run test:e2e` | Run end-to-end scenarios |
 | `npm run bench` | Run performance benchmarks |
 | `npm run bench:profile` | Run benchmarks with Node.js `--prof` for CPU profiling |
+
+## One-Shot CLI Mode
+
+`agentloop` supports a non-interactive, scriptable mode via `src/start-oneshot.ts`. Run a single operation, print the result to `stdout`, and exit — ideal for shell scripts, Makefiles, and CI workflows.
+
+```bash
+npm run oneshot -- <command> [options]
+# or directly:
+npx tsx src/start-oneshot.ts <command> [options]
+```
+
+### `agent` — Run the agentic loop once
+
+```bash
+# Simple one-shot query
+npm run oneshot -- agent -u "What files are in the src directory?"
+
+# Override the system prompt
+npm run oneshot -- agent -s "You are a concise assistant." -u "Summarise the README"
+
+# Use a named agent profile
+npm run oneshot -- agent --profile coder -u "Refactor src/config.ts"
+
+# Stream output tokens as they arrive
+npm run oneshot -- agent --stream -u "List all exported functions in src/index.ts"
+
+# Machine-readable JSON output
+npm run oneshot -- agent --json -u "What is 2 + 2?"
+# → {"output":"2 + 2 equals 4"}
+```
+
+| Flag | Short | Description |
+|---|---|---|
+| `--user` | `-u` | User prompt / task **(required)** |
+| `--system` | `-s` | Replace the system prompt for this invocation |
+| `--profile` | `-p` | Agent profile to activate (e.g. `coder`, `planner`) |
+| `--stream` | | Stream output tokens to stdout |
+| `--json` | | Output `{"output":"..."}` as JSON |
+
+### `websearch` — Invoke the web-search tool directly
+
+```bash
+npm run oneshot -- websearch -q "LangChain tool calling best practices"
+npm run oneshot -- websearch --query "Bun compile" -n 3 --json
+```
+
+| Flag | Short | Description |
+|---|---|---|
+| `--query` | `-q` | Search query **(required)** |
+| `--max-results` | `-n` | Maximum results to return |
+| `--json` | | Output raw JSON result array |
+
+### `web-fetch` — Invoke the web-fetch tool directly
+
+```bash
+npm run oneshot -- web-fetch -u "https://example.com"
+npm run oneshot -- web-fetch --url "https://example.com" --json
+```
+
+| Flag | Short | Description |
+|---|---|---|
+| `--url` | `-u` | URL to fetch **(required)** |
+| `--json` | | Output raw JSON `{ title, markdown, … }` |
+
+### `list` — List registered capabilities
+
+```bash
+npm run oneshot -- list tools          # all registered tools
+npm run oneshot -- list agentprofiles  # all agent profiles
+```
 
 ## Deployment
 
