@@ -37,6 +37,9 @@ export { toolRegistry };
 // Re-export the agent profile registry for use by external entry points (e.g. start-oneshot.ts)
 export { agentProfileRegistry };
 
+// Re-export the skill registry for use by external entry points (e.g. start-oneshot.ts)
+export { skillRegistry };
+
 /** Options accepted by the public agent executor API. */
 export interface AgentRunOptions {
   /** When set, replaces the auto-generated system prompt for this invocation. */
@@ -95,7 +98,7 @@ function getTracer(): Tracer {
 export async function ensureInitialized(): Promise<void> {
   if (!_initPromise) {
     _initPromise = toolRegistry
-      .loadFromDirectory(path.join(__dirname, "tools"))
+      .loadFromDirectory(path.join(__dirname, "tools"), "built-in")
       .then(async () => {
         // Connect to configured MCP servers and register their tools
         if (appConfig.mcpServers.length > 0) {
@@ -109,16 +112,16 @@ export async function ensureInitialized(): Promise<void> {
         }
         await promptRegistry.loadHistory();
         if (appConfig.skillsDir) {
-          await skillRegistry.loadFromDirectory(appConfig.skillsDir);
+          await skillRegistry.loadFromDirectory(appConfig.skillsDir, "custom");
         }
         const builtinSkillsDir = path.join(__dirname, "skills", "builtin");
-        await skillRegistry.loadFromDirectory(builtinSkillsDir);
+        await skillRegistry.loadFromDirectory(builtinSkillsDir, "built-in");
         if (appConfig.agentProfilesDir) {
-          await agentProfileRegistry.loadFromDirectory(appConfig.agentProfilesDir);
+          await agentProfileRegistry.loadFromDirectory(appConfig.agentProfilesDir, "custom");
         }
         // Auto-load builtin agent profiles (Task 7.3)
         const builtinAgentProfilesDir = path.join(__dirname, "agents", "builtin");
-        await agentProfileRegistry.loadFromDirectory(builtinAgentProfilesDir);
+        await agentProfileRegistry.loadFromDirectory(builtinAgentProfilesDir, "built-in");
       });
   }
   return _initPromise;

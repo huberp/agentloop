@@ -17,6 +17,10 @@ export interface Skill {
   tools?: string[];
   instructions?: string;
   slot: "prepend" | "append" | "section";
+  /** Source classification: where this skill was loaded from. */
+  source?: "built-in" | "custom";
+  /** Absolute path to the file this skill was loaded from. */
+  filePath?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,6 +81,14 @@ export class SkillRegistry {
   }
 
   /**
+   * Return full metadata for all registered skills.
+   * Convenience method for the list command and other introspection uses.
+   */
+  getAll(): Skill[] {
+    return this.list();
+  }
+
+  /**
    * Activate a skill by name.
    * Returns false if the skill is not registered.
    * Idempotent: activating an already-active skill is a no-op that returns true.
@@ -116,8 +128,10 @@ export class SkillRegistry {
    * Discover and register all `*.skill.md` files in `dirPath`.
    * Non-existent or unreadable directories are silently ignored.
    * Duplicate names log a warning and are skipped.
+   *
+   * @param source  Optional source tag applied to every loaded skill.
    */
-  async loadFromDirectory(dirPath: string): Promise<void> {
+  async loadFromDirectory(dirPath: string, source?: Skill["source"]): Promise<void> {
     let entries: string[];
     try {
       entries = await fs.readdir(dirPath);
@@ -155,6 +169,8 @@ export class SkillRegistry {
         promptFragment: body,
         ...(tools && tools.length > 0 ? { tools } : {}),
         ...(meta.instructions ? { instructions: meta.instructions } : {}),
+        ...(source ? { source } : {}),
+        filePath,
       };
 
       this.register(skill);

@@ -157,7 +157,24 @@ npm run oneshot -- web-fetch --url "https://example.com" --json
 ```bash
 npm run oneshot -- list tools          # all registered tools
 npm run oneshot -- list agentprofiles  # all agent profiles
+npm run oneshot -- list skills         # all active skills
+npm run oneshot -- list providers      # LLM and search provider status
 ```
+
+Add `--json` for machine-readable output or `--verbose` for full metadata (file path, model, tools, etc.):
+
+```bash
+npm run oneshot -- list tools --json
+npm run oneshot -- list skills --verbose
+npm run oneshot -- list providers
+```
+
+| Capability | Description |
+|---|---|
+| `tools` | All registered tools (built-in + MCP + custom) with name, permission, source, description |
+| `agentprofiles` | All loaded agent profiles with name, source, skills, description |
+| `skills` | All active skills with name, source, description |
+| `providers` | Configured LLM and search providers with their active status |
 
 ## Deployment
 

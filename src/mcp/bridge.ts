@@ -64,6 +64,7 @@ function mcpToolToDefinition(tool: McpToolInfo, client: McpClient): ToolDefiniti
     description: tool.description ?? tool.name,
     schema: buildZodSchema(tool.inputSchema),
     permissions: "safe",
+    source: "mcp",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     execute: async (args: any): Promise<string> => client.callTool(tool.name, args),
   };
