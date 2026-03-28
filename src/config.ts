@@ -19,6 +19,21 @@ function asStringArray(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+type WebSearchProvider = "duckduckgo" | "tavily" | "langsearch" | "none";
+const WEB_SEARCH_PROVIDERS: ReadonlySet<string> = new Set<WebSearchProvider>([
+  "duckduckgo",
+  "tavily",
+  "langsearch",
+  "none",
+]);
+
+/** Parse WEB_SEARCH_PROVIDER; defaults to "duckduckgo" on missing or invalid value. */
+function asWebSearchProvider(value: string | undefined): WebSearchProvider {
+  const lower = value?.toLowerCase() ?? "";
+  if (WEB_SEARCH_PROVIDERS.has(lower)) return lower as WebSearchProvider;
+  return "duckduckgo";
+}
+
 /** Shape of a single entry in the MCP_SERVERS configuration array. */
 interface McpServerEntry {
   name: string;
@@ -103,6 +118,16 @@ export const appConfig = {
   recordLlmResponses: asBoolean(process.env.RECORD_LLM_RESPONSES, false),
   // Directory where recorded fixture files are stored (also used by MockChatModel.fromFixture)
   llmFixtureDir: process.env.LLM_FIXTURE_DIR ?? "tests/fixtures/llm-responses",
+  // Web search provider: "duckduckgo" | "tavily" | "langsearch" | "none" (default: duckduckgo)
+  webSearchProvider: asWebSearchProvider(process.env.WEB_SEARCH_PROVIDER),
+  // Tavily search provider settings (https://tavily.com)
+  tavilyApiKey: process.env.TAVILY_API_KEY ?? "",
+  // Maximum number of results returned by Tavily per query (default: 5)
+  tavilyMaxResults: parseInt(process.env.TAVILY_MAX_RESULTS ?? "5", 10),
+  // LangSearch provider settings (https://langsearch.com)
+  langsearchApiKey: process.env.LANGSEARCH_API_KEY ?? "",
+  // Maximum number of results returned by LangSearch per query (default: 5)
+  langsearchMaxResults: parseInt(process.env.LANGSEARCH_MAX_RESULTS ?? "5", 10),
   // DuckDuckGo search tool: maximum number of results to return per query (default: 5)
   duckduckgoMaxResults: parseInt(process.env.DUCKDUCKGO_MAX_RESULTS ?? "5", 10),
   // DuckDuckGo search reliability controls
