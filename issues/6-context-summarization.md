@@ -230,8 +230,9 @@ RECENT_MESSAGES_KEEP=6
 | `RECENT_MESSAGES_KEEP` | `6` | How many of the most-recent middle messages are always kept verbatim and never compressed. |
 
 **Invariants to enforce at startup:**
-- `SUMMARIZE_THRESHOLD` must be strictly less than `MAX_CONTEXT_TOKENS`; log a warning and clamp to `MAX_CONTEXT_TOKENS * 0.75` if violated.
-- `RECENT_MESSAGES_KEEP` must be ≥ 1; clamp to 1 if zero or negative.
+- `SUMMARIZE_THRESHOLD` must be strictly less than `MAX_CONTEXT_TOKENS`; if violated, emit a structured `logger.warn({ summarizeThreshold, maxContextTokens }, "SUMMARIZE_THRESHOLD ≥ MAX_CONTEXT_TOKENS — clamping to 75% of MAX_CONTEXT_TOKENS")` and clamp automatically.
+- `RECENT_MESSAGES_KEEP` must be ≥ 1; if zero or negative, emit `logger.warn({ value: recentMessagesKeep }, "RECENT_MESSAGES_KEEP must be ≥ 1 — clamping to 1")` and clamp.
+- These validations should live in a `validateSummarizationConfig()` helper called once during `ensureInitialized()` in `src/index.ts`, so operators see the warnings at startup rather than silently getting unexpected trimming behaviour.
 
 ---
 

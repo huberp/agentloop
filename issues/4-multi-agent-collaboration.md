@@ -254,6 +254,12 @@ The tool deserialises a JSON array of `PlanStep` objects from the LLM's tool cal
 
 `executePlan()` converts the static `plan.steps` array into a mutable `steps` list before the for-loop. The `executeStep` function receives an optional `stepInserter` callback. When a step is running with a `SubagentDefinition` that includes the decompose tool, newly injected steps are appended to the live list and the loop counter stays behind them.
 
+**Performance note:** `Array.splice()` at position `i+1` is O(n) where n is the number of steps
+after the insertion point. For typical plan sizes (5–20 steps) this is negligible. If very large
+dynamic plans become a concern (100+ steps), replace the array with a linked list or an index-based
+deque. Document the chosen data structure's characteristics in a code comment at the `steps`
+declaration.
+
 ```ts
 // Inside executePlan — conceptual delta
 const steps = [...plan.steps];  // mutable copy

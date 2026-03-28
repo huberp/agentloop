@@ -144,10 +144,16 @@ export interface EvalCase {
   /** The human turn passed to the agent (the task prompt). */
   input: string;
   /**
-   * The ground-truth value the judge receives alongside the agent output.
-   * Shape depends on the judge: a string for exact/regex match, a JSON
-   * Schema object for schema validation, a ToolCallSequence for tool-use
-   * benchmarks, etc.
+   * The reference expectation the judge receives alongside the agent output.
+   * "Ground-truth" here means a developer-specified reference value used to
+   * judge correctness — not a statistical ground truth in the ML sense.
+   * The exact shape depends on the judge:
+   *   - `string`          → for ExactMatchJudge or RegexJudge
+   *   - JSON Schema object → for SchemaValidationJudge
+   *   - `ToolCallSequence` → for ToolUseJudge (benchmarks correct tool selection)
+   *   - `LLMRubric`        → for LLMJudge (semantic similarity assessed by a second LLM)
+   * Each judge validates that `expected` has the correct shape and throws
+   * `EvalConfigError` with a clear message if the types don't match.
    */
   expected: unknown;
   /**

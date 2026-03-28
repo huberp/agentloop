@@ -188,6 +188,8 @@ Check each for known CVEs before installing (GitHub Advisory DB). Pin to the sam
 
 **Google note:** Google GenAI uses `model` as a required constructor argument (e.g. `gemini-1.5-pro`). Apply the same empty-model guard as Ollama.
 
+**Early validation:** Add a provider/model consistency check at the start of `createLLM()` before any `switch` branch. Define a `KNOWN_MODEL_PREFIXES` map (e.g. `{ openai: ["gpt-", "o1-", "o3-"], anthropic: ["claude-"], google: ["gemini-"] }`) and warn via `logger.warn` if the declared model name doesn't match the expected prefix for the chosen provider. This surfaces the existing `coder.agent.json` bug immediately at startup rather than at the first LLM API call.
+
 ### Step 3 — Add new config keys to `src/config.ts`
 
 Add to `appConfig`:

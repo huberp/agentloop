@@ -157,10 +157,25 @@ export function createChatHistory(sessionId: string): BaseChatMessageHistory {
     case "file":
       return new FileChatMessageHistory(sessionId, appConfig.memoryDir);
     case "redis":
-      // Dynamically required to avoid hard dep when Redis is not configured
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { RedisChatMessageHistory } = require("@langchain/redis");
-      return new RedisChatMessageHistory({ sessionId, url: appConfig.redisUrl });
+      // Dynamically required to avoid hard dep when Redis is not configured.
+      // Wrap in try/catch to surface a clear error if @langchain/redis is not installed.
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { RedisChatMessageHistory } = require("@langchain/redis");
+        if (!appConfig.redisUrl) {
+          throw new Error("MEMORY_BACKEND=redis requires REDIS_URL to be set");
+        }
+        return new RedisChatMessageHistory({ sessionId, url: appConfig.redisUrl });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("Cannot find module")) {
+          throw new Error(
+            "MEMORY_BACKEND=redis requires @langchain/redis to be installed: " +
+            "run `npm install @langchain/redis`"
+          );
+        }
+        throw err;
+      }
     default:
       return new InMemoryChatMessageHistory();
   }

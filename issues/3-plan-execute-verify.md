@@ -270,6 +270,14 @@ Revise this step and all subsequent steps accordingly.
 `replanFromStep()` calls the existing `refinePlan()` (from `src/subagents/planner.ts`) — no
 changes to `refinePlan()` are required.
 
+**Step-index stability:** `replanFromStep()` only replaces `steps[failedIndex..]` — the prefix
+`steps[0..failedIndex-1]` is kept intact. After replan, the loop re-runs step at index `i` (the
+failed step) using the new `plan.steps[i]`. The `resumeFrom` / checkpoint mechanism must
+re-number checkpoints based on the new plan length after replan; `executePlan()` should reset
+`total = plan.steps.length` immediately after `plan = await replanFromStep(...)`.  Checkpoints
+written before index `i` are still valid; steps after `i` get new descriptions and must be
+re-executed regardless of any previously stored checkpoints for those indices.
+
 ### Step 6 — Wire verification into `executePlan()` in `src/orchestrator.ts`
 
 Modify the main step-execution loop to call `verifyStep()` after a successful step result, and
