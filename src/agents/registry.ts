@@ -30,7 +30,15 @@ export class AgentProfileRegistry {
     return Array.from(this.profiles.values());
   }
 
-  async loadFromDirectory(dirPath: string): Promise<void> {
+  /**
+   * Return full metadata for all registered agent profiles.
+   * Convenience method for the list command and other introspection uses.
+   */
+  getAll(): AgentProfile[] {
+    return this.list();
+  }
+
+  async loadFromDirectory(dirPath: string, source?: AgentProfile["source"]): Promise<void> {
     let entries: import("fs").Dirent[];
     try {
       entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -45,6 +53,9 @@ export class AgentProfileRegistry {
       const filePath = path.join(dirPath, entry.name);
       try {
         const profile = await loadAgentProfile(filePath);
+        // Stamp source and filePath if not already set by the profile file itself
+        if (source && !profile.source) profile.source = source;
+        if (!profile.filePath) profile.filePath = filePath;
         this.register(profile);
       } catch (err) {
         logger.warn(

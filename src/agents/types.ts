@@ -25,6 +25,10 @@ export interface AgentProfile {
   instructions?: string[];
   maxIterations?: number;
   constraints?: AgentConstraints;
+  /** Source classification: where this profile was loaded from. */
+  source?: "built-in" | "custom";
+  /** Absolute path to the file this profile was loaded from. */
+  filePath?: string;
 }
 
 export interface AgentRuntimeConfig {

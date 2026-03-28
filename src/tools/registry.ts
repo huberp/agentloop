@@ -23,6 +23,10 @@ export interface ToolDefinition {
    * Used by SubagentManager.runParallel to detect write conflicts across parallel subagents.
    */
   mutatesFile?: (args: Record<string, unknown>) => string | undefined;
+  /** Source classification: where this tool was loaded from. */
+  source?: "built-in" | "custom" | "mcp";
+  /** Absolute path to the file this tool was loaded from (when loaded from a directory). */
+  filePath?: string;
 }
 
 /** Internal registry entry: holds the original definition and its LangChain wrapper. */
@@ -86,6 +90,26 @@ export class ToolRegistry {
     }));
   }
 
+  /**
+   * Return full metadata for all registered tools.
+   * Unlike `list()`, this includes permission level, source, and file path.
+   */
+  getAll(): Array<{
+    name: string;
+    description: string;
+    permissions: "safe" | "cautious" | "dangerous";
+    source: "built-in" | "custom" | "mcp" | undefined;
+    filePath: string | undefined;
+  }> {
+    return Array.from(this.entries.values()).map(({ definition }) => ({
+      name: definition.name,
+      description: definition.description,
+      permissions: definition.permissions ?? "safe",
+      source: definition.source,
+      filePath: definition.filePath,
+    }));
+  }
+
   /** Return all LangChain tool wrappers (used for `llm.bindTools()`). */
   toLangChainTools(): StructuredToolInterface[] {
     return Array.from(this.entries.values()).map(({ langchainTool }) => langchainTool);
@@ -97,8 +121,10 @@ export class ToolRegistry {
    * Any `.ts` or `.js` file (excluding `registry.*` and test files) that
    * exports a `toolDefinition` constant is registered automatically.
    * This allows adding new tools without editing any existing file.
+   *
+   * @param source  Optional source tag applied to every loaded tool.
    */
-  async loadFromDirectory(dirPath: string): Promise<void> {
+  async loadFromDirectory(dirPath: string, source?: ToolDefinition["source"]): Promise<void> {
     const files = await fs.readdir(dirPath);
     const toolFiles = files.filter(
       (f) =>
@@ -114,7 +140,14 @@ export class ToolRegistry {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const mod = await import(fileUrl);
       if (mod.toolDefinition) {
-        this.register(mod.toolDefinition as ToolDefinition);
+        const def = mod.toolDefinition as ToolDefinition;
+        // Always stamp filePath; apply source tag only when provided and not already set.
+        const tagged: ToolDefinition = {
+          ...def,
+          filePath: def.filePath ?? filePath,
+          ...(source && !def.source ? { source } : {}),
+        };
+        this.register(tagged);
       }
     }
   }
