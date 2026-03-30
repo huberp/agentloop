@@ -21,10 +21,9 @@ describe("built-in skill library", () => {
     "git-workflow",
     "security-auditor",
     "build-verify",
-    "cmake-workflow",
   ];
 
-  it("loads all 7 built-in skills", () => {
+  it("loads all 6 built-in skills", () => {
     const names = registry.list().map((s) => s.name);
     for (const name of BUILTIN_NAMES) {
       expect(names).toContain(name);
