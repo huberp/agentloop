@@ -24,8 +24,8 @@ beforeAll(async () => {
 });
 
 describe("builtin agent profiles", () => {
-  it("loads exactly 5 builtin profiles", () => {
-    expect(registry.list()).toHaveLength(5);
+  it("loads exactly 7 builtin profiles", () => {
+    expect(registry.list()).toHaveLength(7);
   });
 
   it("coder profile has name === 'coder' and model === 'gpt-4o'", () => {

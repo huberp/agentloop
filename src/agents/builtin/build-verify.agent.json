@@ -1,0 +1,12 @@
+{
+  "name": "build-verify",
+  "description": "Build verification agent — compiles the workspace and reports success or failure with compiler diagnostics",
+  "version": "1.0.0",
+  "temperature": 0.1,
+  "skills": ["build-verify"],
+  "tools": ["shell", "file-read", "file-list"],
+  "maxIterations": 10,
+  "constraints": {
+    "requireConfirmation": []
+  }
+}

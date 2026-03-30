@@ -3,11 +3,11 @@ import * as path from "path";
 
 /** Structured information about the project workspace. */
 export interface WorkspaceInfo {
-  /** Primary language detected: 'node', 'python', 'go', or 'unknown'. */
+  /** Primary language detected: 'node', 'python', 'go', 'rust', 'cmake', or 'unknown'. */
   language: string;
   /** Framework detected from dependencies (e.g. 'react', 'django'), or 'none'. */
   framework: string;
-  /** Package manager inferred from lock files or language (e.g. 'npm', 'pip'). */
+  /** Package manager inferred from lock files or language (e.g. 'npm', 'pip', 'cargo', 'gradle'). */
   packageManager: string;
   /** True if a test directory or test script was found. */
   hasTests: boolean;
@@ -169,6 +169,115 @@ async function analyzeGo(rootPath: string): Promise<Partial<WorkspaceInfo>> {
 }
 
 /**
+ * Analyse a Rust/Cargo workspace.
+ * Reads Cargo.toml for basic metadata and checks for a `tests/` directory.
+ */
+async function analyzeCargo(rootPath: string): Promise<Partial<WorkspaceInfo>> {
+  const info: Partial<WorkspaceInfo> = {
+    language: "rust",
+    packageManager: "cargo",
+    testCommand: "cargo test",
+    lintCommand: "cargo clippy",
+    buildCommand: "cargo build",
+  };
+
+  // Override defaults with Makefile targets when available
+  const make = await parseMakefileTargets(rootPath);
+  if (make["test"]) info.testCommand = make["test"];
+  if (make["lint"]) info.lintCommand = make["lint"];
+  if (make["build"]) info.buildCommand = make["build"];
+
+  // Consider tests present if a tests/ directory or any #[cfg(test)] usage exists
+  info.hasTests =
+    (await exists(path.join(rootPath, "tests"))) ||
+    (await exists(path.join(rootPath, "src", "tests")));
+
+  return info;
+}
+
+/**
+ * Analyse a CMake workspace.
+ * Reads CMakeLists.txt for basic metadata and suggests cmake preset commands
+ * when a CMakePresets.json file is present.
+ */
+async function analyzeCMake(rootPath: string): Promise<Partial<WorkspaceInfo>> {
+  const info: Partial<WorkspaceInfo> = {
+    language: "cmake",
+    packageManager: "cmake",
+    testCommand: "ctest --output-on-failure",
+    lintCommand: "",
+    buildCommand: "cmake --build build",
+  };
+
+  // When CMakePresets.json is present, recommend the preset-based workflow
+  if (await exists(path.join(rootPath, "CMakePresets.json"))) {
+    info.buildCommand = "cmake --preset default && cmake --build --preset default";
+    info.testCommand = "ctest --preset default";
+  } else {
+    // Classic out-of-source build pattern
+    info.buildCommand = "cmake -S . -B build && cmake --build build";
+  }
+
+  // Override with Makefile targets when available (common for CMake super-builds)
+  const make = await parseMakefileTargets(rootPath);
+  if (make["test"]) info.testCommand = make["test"];
+  if (make["build"]) info.buildCommand = make["build"];
+
+  // Detect tests by presence of a CTestTestfile, tests/ directory, or test subdirectory
+  info.hasTests =
+    (await exists(path.join(rootPath, "CTestTestfile.cmake"))) ||
+    (await exists(path.join(rootPath, "tests"))) ||
+    (await exists(path.join(rootPath, "test")));
+
+  return info;
+}
+
+/**
+ * Analyse a Gradle (Java/Kotlin/Android) workspace.
+ */
+async function analyzeGradle(rootPath: string): Promise<Partial<WorkspaceInfo>> {
+  // Prefer ./gradlew wrapper when present
+  const gradleCmd = (await exists(path.join(rootPath, "gradlew"))) ? "./gradlew" : "gradle";
+
+  const info: Partial<WorkspaceInfo> = {
+    language: "java",
+    packageManager: "gradle",
+    testCommand: `${gradleCmd} test`,
+    lintCommand: `${gradleCmd} check`,
+    buildCommand: `${gradleCmd} build`,
+  };
+
+  // Check for Kotlin DSL (build.gradle.kts) to refine the language label
+  if (await exists(path.join(rootPath, "build.gradle.kts"))) {
+    info.language = "kotlin";
+  }
+
+  info.hasTests = (await exists(path.join(rootPath, "src", "test")));
+
+  return info;
+}
+
+/**
+ * Analyse a Maven (Java) workspace.
+ */
+async function analyzeMaven(rootPath: string): Promise<Partial<WorkspaceInfo>> {
+  // Prefer ./mvnw wrapper when present
+  const mvnCmd = (await exists(path.join(rootPath, "mvnw"))) ? "./mvnw" : "mvn";
+
+  const info: Partial<WorkspaceInfo> = {
+    language: "java",
+    packageManager: "maven",
+    testCommand: `${mvnCmd} test`,
+    lintCommand: `${mvnCmd} verify`,
+    buildCommand: `${mvnCmd} package -DskipTests`,
+  };
+
+  info.hasTests = (await exists(path.join(rootPath, "src", "test")));
+
+  return info;
+}
+
+/**
  * Analyse the workspace rooted at `rootPath` and return a `WorkspaceInfo`
  * object.  Language is detected via well-known indicator files; commands are
  * extracted from the project manifest (package.json, pyproject.toml) and
@@ -201,6 +310,17 @@ export async function analyzeWorkspace(rootPath: string): Promise<WorkspaceInfo>
     langInfo = await analyzePython(rootPath);
   } else if (await exists(path.join(rootPath, "go.mod"))) {
     langInfo = await analyzeGo(rootPath);
+  } else if (await exists(path.join(rootPath, "Cargo.toml"))) {
+    langInfo = await analyzeCargo(rootPath);
+  } else if (await exists(path.join(rootPath, "CMakeLists.txt"))) {
+    langInfo = await analyzeCMake(rootPath);
+  } else if (
+    (await exists(path.join(rootPath, "build.gradle"))) ||
+    (await exists(path.join(rootPath, "build.gradle.kts")))
+  ) {
+    langInfo = await analyzeGradle(rootPath);
+  } else if (await exists(path.join(rootPath, "pom.xml"))) {
+    langInfo = await analyzeMaven(rootPath);
   }
 
   return { ...base, ...langInfo };

@@ -83,8 +83,18 @@ function buildPlannerTask(
   let result =
     `Task: ${task}\n` +
     `Workspace: language=${workspaceInfo.language}, framework=${workspaceInfo.framework}, ` +
-    `packageManager=${workspaceInfo.packageManager}, gitInitialized=${workspaceInfo.gitInitialized}\n` +
-    `Available tools: ${toolList}`;
+    `packageManager=${workspaceInfo.packageManager}, gitInitialized=${workspaceInfo.gitInitialized}`;
+
+  // Include lifecycle commands so the planner can generate concrete, workspace-specific steps
+  const lifecycleLines: string[] = [];
+  if (workspaceInfo.buildCommand) lifecycleLines.push(`build="${workspaceInfo.buildCommand}"`);
+  if (workspaceInfo.testCommand) lifecycleLines.push(`test="${workspaceInfo.testCommand}"`);
+  if (workspaceInfo.lintCommand) lifecycleLines.push(`lint="${workspaceInfo.lintCommand}"`);
+  if (lifecycleLines.length > 0) {
+    result += `, ${lifecycleLines.join(", ")}`;
+  }
+
+  result += `\nAvailable tools: ${toolList}`;
   if (availableProfiles && availableProfiles.length > 0) {
     const profileList = availableProfiles.map((p) => `${p.name}: ${p.description}`).join("; ");
     result += `\nAvailable agent profiles: ${profileList}`;
