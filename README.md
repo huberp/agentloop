@@ -6,7 +6,7 @@ AgentLoop is a TypeScript-first [LangChain](https://js.langchain.com/) runtime f
 
 - **Iterative agent loop** — LLM calls tools, receives results as `ToolMessage` entries, and loops until the task is done or `MAX_ITERATIONS` is reached.
 - **Dynamic tool discovery** — drop a `.ts` file exporting `toolDefinition` into `src/tools/` and it is auto-registered at startup; no central list to edit.
-- **16 built-in tools** — filesystem read/write/edit/delete, shell execution, code search, code runner, unified diff/patch, and four git tools.
+- **22 built-in tools** — filesystem read/write/edit/delete, shell execution, code search, code runner, unified diff/patch, seven git tools (status/log/diff/commit/branch/checkout/push), web search, web fetch, and two-stage plan/run tools.
 - **Resilient web search** — DuckDuckGo search includes retry with back-off, configurable throttling, and in-memory caching to reduce transient failures.
 - **Security controls** — path traversal prevention, shell injection detection, per-tool permission levels (`safe` / `cautious` / `dangerous`), blocklist/allowlist, output size limits, and concurrency cap.
 - **MCP integration** — connect stdio or SSE MCP servers; their tools appear alongside built-in tools.
@@ -67,8 +67,8 @@ for await (const chunk of agentExecutor.stream("What files changed recently?")) 
 | [docs/getting-started.md](docs/getting-started.md) | Installation, first run, example workflows |
 | [docs/usage.md](docs/usage.md) | Subagents, planner, orchestrator, parallel execution examples |
 | [docs/architecture.md](docs/architecture.md) | System overview, agent loop flow, Mermaid diagrams |
-| [docs/tools.md](docs/tools.md) | Catalog of all 16 built-in tools with inputs, outputs, and examples |
-| [docs/configuration.md](docs/configuration.md) | All 43 environment variables with defaults and descriptions |
+| [docs/tools.md](docs/tools.md) | Catalog of all 22 built-in tools with inputs, outputs, and examples |
+| [docs/configuration.md](docs/configuration.md) | All environment variables with defaults and descriptions |
 | [docs/extending.md](docs/extending.md) | Add a custom tool, create subagents, connect MCP servers |
 | [docs/security.md](docs/security.md) | Threat model and security mitigations |
 | [docs/testing.md](docs/testing.md) | Testing strategy and `MockChatModel` usage |

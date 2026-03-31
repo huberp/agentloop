@@ -459,3 +459,238 @@ JSON: `{ success: true, commitHash, branch }` or `{ success: false, error }`.
 git-commit({ message: "fix: correct calculation", files: ["src/tools/calculate.ts"] })
 → { success: true, commitHash: "a1b2c3d", branch: "main" }
 ```
+
+---
+
+## git-branch
+
+**Permission:** `cautious`  
+**File:** `src/tools/git-branch.ts`
+
+Manages Git branches: list all local branches, create a new branch, or delete a branch. Equivalent to `git branch`, `git branch <name> [<start>]`, and `git branch -d|-D <name>`.
+
+### Inputs
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `action` | `"list" \| "create" \| "delete"` | yes | Operation to perform |
+| `branch` | `string` | create/delete | Branch name (required for `create` and `delete`) |
+| `startPoint` | `string` | no | Commit, tag, or branch to base the new branch on (create only; defaults to HEAD) |
+| `force` | `boolean` | no | Force-delete even if not fully merged (delete only) |
+| `cwd` | `string` | no | Repository path (defaults to `process.cwd()`) |
+
+### Output
+
+- **list:** JSON `{ success: true, branches: [{ name, current, commit }], current }`.
+- **create / delete:** JSON `{ success: true }` or `{ success: false, error }`.
+
+### Example
+
+```
+git-branch({ action: "create", branch: "feature/my-feature" })
+→ { success: true }
+
+git-branch({ action: "list" })
+→ { success: true, branches: [{ name: "main", current: true, commit: "a1b2c3d" }], current: "main" }
+```
+
+---
+
+## git-checkout
+
+**Permission:** `cautious`  
+**File:** `src/tools/git-checkout.ts`
+
+Switches the working tree to a given branch, tag, or commit. When `newBranch` is supplied, creates that branch at the given ref and checks it out (equivalent to `git checkout -b <newBranch> <branch>`).
+
+### Inputs
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `branch` | `string` | yes | Branch name, tag, or commit hash to check out |
+| `newBranch` | `string` | no | When provided, creates and checks out a new branch at `branch` |
+| `cwd` | `string` | no | Repository path (defaults to `process.cwd()`) |
+
+### Output
+
+JSON: `{ success: true, branch }` or `{ success: false, error }`.
+
+### Example
+
+```
+git-checkout({ branch: "main" })
+→ { success: true, branch: "main" }
+
+git-checkout({ branch: "main", newBranch: "feature/my-feature" })
+→ { success: true, branch: "feature/my-feature" }
+```
+
+---
+
+## git-push
+
+**Permission:** `dangerous`  
+**File:** `src/tools/git-push.ts`
+
+Pushes the current (or specified) branch to a remote. Equivalent to `git push [--set-upstream] [--force] <remote> <branch>`. Defaults to `origin` as the remote and the currently checked-out branch.
+
+### Inputs
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `remote` | `string` | no | Remote name (defaults to `"origin"`) |
+| `branch` | `string` | no | Branch to push (defaults to the currently checked-out branch) |
+| `setUpstream` | `boolean` | no | Set the upstream tracking reference (`-u` / `--set-upstream`) |
+| `force` | `boolean` | no | Force push — overwrites remote history. Use with caution. |
+| `cwd` | `string` | no | Repository path (defaults to `process.cwd()`) |
+
+### Output
+
+JSON: `{ success: true, remote, branch }` or `{ success: false, error }`.
+
+### Example
+
+```
+git-push({ remote: "origin", branch: "feature/my-feature", setUpstream: true })
+→ { success: true, remote: "origin", branch: "feature/my-feature" }
+```
+
+---
+
+## plan
+
+**Permission:** `safe`  
+**File:** `src/tools/plan.ts`
+
+Decomposes a high-level goal into a structured, step-by-step plan using the planner subagent. Returns the plan as a JSON object. Pass the result directly to the `run` tool to execute it.
+
+### Inputs
+
+| Field | Type | Description |
+|---|---|---|
+| `goal` | `string` | High-level goal to decompose into an actionable plan |
+
+### Output
+
+JSON plan object: `{ steps: [{ description, toolsNeeded, estimatedComplexity }] }`.
+
+### Example
+
+```
+plan({ goal: "Add unit tests for src/tools/calculate.ts" })
+→ { steps: [
+     { description: "Read calculate.ts", toolsNeeded: ["file-read"], estimatedComplexity: "low" },
+     { description: "Write test file",   toolsNeeded: ["file-write"],  estimatedComplexity: "medium" }
+   ] }
+```
+
+---
+
+## run
+
+**Permission:** `dangerous`  
+**File:** `src/tools/run.ts`
+
+Executes a plan produced by the `plan` tool. Runs each step as an isolated subagent in sequence and returns per-step results.
+
+### Inputs
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `plan` | `object` | yes | Plan object returned by the `plan` tool (`{ steps: [...] }`) |
+| `onStepFailure` | `"retry" \| "skip" \| "abort"` | no | Strategy when a step fails (defaults to `"retry"`) |
+
+### Output
+
+A plain text summary with per-step status icons (`✓` success, `–` skipped, `✗` failed) and a final "Completed successfully." or "Completed with failures." line.
+
+### Example
+
+```
+run({ plan: { steps: [...] }, onStepFailure: "skip" })
+→ "✓ Step 1: Read calculate.ts
+   ✓ Step 2: Write test file
+
+   Completed successfully."
+```
+
+---
+
+## plan-and-run
+
+**Permission:** `dangerous`  
+**File:** `src/tools/plan-and-run.ts`
+
+Combines the `plan` and `run` tools into a single call: decomposes the goal into a plan using the planner subagent, then immediately executes each step in sequence. Automatically refines the plan once if it references unavailable tools.
+
+### Inputs
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `goal` | `string` | yes | High-level goal to plan and execute |
+| `onStepFailure` | `"retry" \| "skip" \| "abort"` | no | Strategy when a step fails (defaults to `"retry"`) |
+
+### Output
+
+A plain text summary identical to the `run` tool output.
+
+### Example
+
+```
+plan-and-run({ goal: "Add a CONTRIBUTING.md that explains the project structure" })
+→ "✓ Step 1: Read README.md and docs/ to understand project structure
+   ✓ Step 2: Draft CONTRIBUTING.md content
+   ✓ Step 3: Write CONTRIBUTING.md
+
+   Completed successfully."
+```
+
+---
+
+## web_fetch
+
+**Permission:** `cautious`  
+**File:** `src/tools/web-fetch.ts`
+
+Fetches a public web page by URL and returns its main content as Markdown. Strips tracking parameters, enforces security checks (SSRF protection, domain blocklist/allowlist), and converts HTML to clean Markdown using Mozilla Readability and Turndown. Use this after a `search()` call to read the content of a specific URL.
+
+### Inputs
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `url` | `string` | — | URL of the web page to fetch |
+| `extractMode` | `"readability" \| "raw"` | `"readability"` | `"readability"` extracts the main article content (strips nav, ads, sidebars); `"raw"` converts the full `<body>` to Markdown |
+
+### Output
+
+JSON: `{ url, title, markdown, byline?, excerpt?, originalLength, truncated }` or `{ error, url }` on failure.
+
+| Field | Type | Description |
+|---|---|---|
+| `url` | `string` | Cleaned URL (tracking params stripped) |
+| `title` | `string` | Page title |
+| `markdown` | `string` | Main content as Markdown, truncated to `WEB_MAX_CONTENT_CHARS` |
+| `byline` | `string?` | Article author (when available) |
+| `excerpt` | `string?` | Short excerpt (when available) |
+| `originalLength` | `number` | Length of the Markdown before truncation |
+| `truncated` | `boolean` | Whether the content was truncated |
+
+### Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `WEB_DOMAIN_BLOCKLIST` | *(empty)* | Comma-separated hostnames to block |
+| `WEB_DOMAIN_ALLOWLIST` | *(empty)* | When non-empty, only these hostnames are permitted |
+| `WEB_ALLOW_HTTP` | `false` | Allow `http://` URLs (off by default) |
+| `WEB_MAX_RESPONSE_BYTES` | `5242880` (5 MB) | Maximum HTTP response body size |
+| `WEB_MAX_CONTENT_CHARS` | `20000` | Maximum Markdown output length |
+| `WEB_USER_AGENT` | `AgentLoop/1.0` | User-Agent header |
+| `WEB_FETCH_TIMEOUT_MS` | `15000` | Request timeout in milliseconds |
+
+### Example
+
+```
+web_fetch({ url: "https://example.com/article" })
+→ { url: "https://example.com/article", title: "Example Article",
+    markdown: "# Example Article\n\nContent here…", truncated: false, originalLength: 450 }
+```

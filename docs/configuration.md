@@ -179,13 +179,31 @@ MCP_SERVERS=[{"name":"my-server","transport":"stdio","command":"npx","args":["my
 
 ---
 
+## Runtime Context
+
+| Variable | Default | Type | Description |
+|---|---|---|---|
+| `RUNTIME_CONTEXT_ENABLED` | `true` | bool | When `true`, the system prompt includes the current date/time, OS platform, and Node.js version. Set to `false` for fully deterministic or snapshot-tested runs. |
+
+---
+
+## Coordinator
+
+| Variable | Default | Type | Description |
+|---|---|---|---|
+| `COORDINATOR_ENABLED` | `false` | bool | When `true`, automatically routes each request to the best-matching agent profile when no explicit profile is specified. Requires at least one agent profile to be loaded. |
+| `COORDINATOR_PLAN_THRESHOLD` | `1` | int | Number of plan steps above which `coordinatedExecute()` uses the plan + orchestrate path instead of a single `invoke()` call. |
+
+---
+
 ## Logging
 
 | Variable | Default | Type | Description |
 |---|---|---|---|
 | `LOG_LEVEL` | `info` | string | Pino log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. |
 | `LOG_ENABLED` | `true` | bool | Set to `false` to silence all log output. |
-| `LOG_DESTINATION` | `stdout` | string | Log destination. Currently `stdout` is the only supported value. |
+| `LOG_DESTINATION` | `stdout` | string | Log destination when `LOG_FILE` is not set: `stdout` or `stderr`. |
+| `LOG_FILE` | *(empty)* | string | When set, all log output is written to this file instead of `stdout`/`stderr`. Recommended for production and interactive CLI use to keep the terminal clean. |
 | `LOG_NAME` | `agentloop` | string | Logger name included in every log record. |
 | `LOG_TIMESTAMP` | `true` | bool | Include an ISO timestamp in every log record. |
 
