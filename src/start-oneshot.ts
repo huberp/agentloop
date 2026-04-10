@@ -113,7 +113,8 @@ async function runAgent(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const { agentExecutor } = await import("./index");
+  const { getActiveExecutor } = await import("./index");
+  const executor = getActiveExecutor();
 
   const runOptions: import("./index").AgentRunOptions | undefined = values.system
     ? { systemPromptOverride: values.system }
@@ -122,7 +123,7 @@ async function runAgent(args: string[]): Promise<void> {
 
   if (values.stream) {
     let accumulated = "";
-    for await (const chunk of agentExecutor.stream(values.user, profileName, runOptions)) {
+    for await (const chunk of executor.stream(values.user, profileName, runOptions)) {
       if (values.json) {
         accumulated += chunk;
       } else {
@@ -135,7 +136,7 @@ async function runAgent(args: string[]): Promise<void> {
       process.stdout.write("\n");
     }
   } else {
-    const result = await agentExecutor.invoke(values.user, profileName, runOptions);
+    const result = await executor.invoke(values.user, profileName, runOptions);
     if (values.json) {
       process.stdout.write(JSON.stringify({ output: result.output }) + "\n");
     } else {
