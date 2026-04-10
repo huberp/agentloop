@@ -441,10 +441,12 @@ export const agentExecutor = {
  * Build an executor adapter for the LangGraphJS orchestrator that conforms to
  * the same shape as agentExecutor (invoke + stream). Since graphExecutor does
  * not yet support token-level streaming, `stream` yields the full output as a
- * single chunk. The `profileName` and `runOptions` parameters are accepted for
- * API compatibility but are not currently used by the graph orchestrator.
+ * single chunk.
+ *
+ * Parameters `profileName` and `runOptions` are accepted for API compatibility
+ * with agentExecutor but are not yet forwarded to the graph orchestrator.
  */
-function buildGraphExecutorAdapter() {
+function createGraphExecutorAdapter() {
   return {
     invoke: async (input: string, _profileName?: string, _runOptions?: AgentRunOptions) => {
       await ensureInitialized();
@@ -459,13 +461,19 @@ function buildGraphExecutorAdapter() {
   };
 }
 
+// Memoised graph executor adapter — created once on first use
+let _graphExecutorAdapter: ReturnType<typeof createGraphExecutorAdapter> | null = null;
+
 /**
  * Return the active executor based on the ORCHESTRATOR config key.
  * "langgraph" → graphExecutor adapter; anything else → agentExecutor.
  */
 export function getActiveExecutor() {
   if (appConfig.orchestrator === "langgraph") {
-    return buildGraphExecutorAdapter();
+    if (!_graphExecutorAdapter) {
+      _graphExecutorAdapter = createGraphExecutorAdapter();
+    }
+    return _graphExecutorAdapter;
   }
   return agentExecutor;
 }
