@@ -31,6 +31,6 @@ jobs:
           npm run oneshot -- agent \
             --api-key "$MISTRAL_API_KEY" \
             --json \
-            -u "Reply with exactly one word: hello"
+            -u "I want to add antrophic models to github repo huberp/agentloop. just plan steps and print plan"
         env:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
