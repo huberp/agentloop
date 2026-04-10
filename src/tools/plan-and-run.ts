@@ -5,7 +5,7 @@ import { logger } from "../logger";
 import { spinner } from "../spinner";
 import { executePlan } from "../orchestrator";
 import { generatePlan, refinePlan, validatePlan } from "../subagents/planner";
-import { analyzeWorkspace } from "../workspace";
+import { analyzeWorkspace, toWorkspaceContext } from "../workspace";
 import type { ToolDefinition } from "./registry";
 import { toolRegistry } from "./registry";
 
@@ -31,8 +31,9 @@ export const toolDefinition: ToolDefinition = {
     logger.info({ tool: "plan-and-run", goal }, "generating plan");
 
     const workspaceInfo = await analyzeWorkspace(appConfig.workspaceRoot);
+    const context = toWorkspaceContext(workspaceInfo);
 
-    let plan = await generatePlan(goal, workspaceInfo, toolRegistry);
+    let plan = await generatePlan(goal, context, toolRegistry);
 
     let validation = validatePlan(plan, toolRegistry);
     if (!validation.valid) {
@@ -45,7 +46,7 @@ export const toolDefinition: ToolDefinition = {
         plan,
         `These tools are not available: ${validation.invalidTools.join(", ")}. ` +
           "Use only tools from the available list.",
-        workspaceInfo,
+        context,
         toolRegistry
       );
       validation = validatePlan(plan, toolRegistry);

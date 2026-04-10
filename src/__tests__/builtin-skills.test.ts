@@ -20,9 +20,10 @@ describe("built-in skill library", () => {
     "test-writer",
     "git-workflow",
     "security-auditor",
+    "build-verify",
   ];
 
-  it("loads all 5 built-in skills", () => {
+  it("loads all 6 built-in skills", () => {
     const names = registry.list().map((s) => s.name);
     for (const name of BUILTIN_NAMES) {
       expect(names).toContain(name);

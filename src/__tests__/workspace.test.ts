@@ -118,3 +118,163 @@ describe("analyzeWorkspace — git detection", () => {
     expect(info.gitInitialized).toBe(true);
   });
 });
+
+describe("analyzeWorkspace — Rust/Cargo project", () => {
+  const root = path.join(fixturesDir, "workspace-cargo");
+
+  let info: WorkspaceInfo;
+  beforeAll(async () => {
+    info = await analyzeWorkspace(root);
+  });
+
+  it("detects language as 'rust'", () => {
+    expect(info.language).toBe("rust");
+  });
+
+  it("uses 'cargo' as the package manager", () => {
+    expect(info.packageManager).toBe("cargo");
+  });
+
+  it("defaults the build command to 'cargo build'", () => {
+    expect(info.buildCommand).toBe("cargo build");
+  });
+
+  it("defaults the test command to 'cargo test'", () => {
+    expect(info.testCommand).toBe("cargo test");
+  });
+
+  it("defaults the lint command to 'cargo clippy'", () => {
+    expect(info.lintCommand).toBe("cargo clippy");
+  });
+
+  it("reports hasTests as true when a tests/ directory exists", () => {
+    expect(info.hasTests).toBe(true);
+  });
+});
+
+describe("analyzeWorkspace — CMake project (no presets)", () => {
+  const root = path.join(fixturesDir, "workspace-cmake");
+
+  let info: WorkspaceInfo;
+  beforeAll(async () => {
+    info = await analyzeWorkspace(root);
+  });
+
+  it("detects language as 'cmake'", () => {
+    expect(info.language).toBe("cmake");
+  });
+
+  it("uses 'cmake' as the package manager", () => {
+    expect(info.packageManager).toBe("cmake");
+  });
+
+  it("uses classic out-of-source build command when no presets file is present", () => {
+    expect(info.buildCommand).toBe("cmake -S . -B build && cmake --build build");
+  });
+
+  it("defaults the test command to ctest", () => {
+    expect(info.testCommand).toBe("ctest --output-on-failure");
+  });
+
+  it("reports hasTests as true when a tests/ directory exists", () => {
+    expect(info.hasTests).toBe(true);
+  });
+});
+
+describe("analyzeWorkspace — CMake project (with CMakePresets.json)", () => {
+  const root = path.join(fixturesDir, "workspace-cmake-presets");
+
+  let info: WorkspaceInfo;
+  beforeAll(async () => {
+    info = await analyzeWorkspace(root);
+  });
+
+  it("detects language as 'cmake'", () => {
+    expect(info.language).toBe("cmake");
+  });
+
+  it("uses preset-based build command when CMakePresets.json is present", () => {
+    expect(info.buildCommand).toBe(
+      "cmake --preset default && cmake --build --preset default"
+    );
+  });
+
+  it("uses preset-based test command when CMakePresets.json is present", () => {
+    expect(info.testCommand).toBe("ctest --preset default");
+  });
+});
+
+describe("analyzeWorkspace — Gradle (Java) project", () => {
+  const root = path.join(fixturesDir, "workspace-gradle");
+
+  let info: WorkspaceInfo;
+  beforeAll(async () => {
+    info = await analyzeWorkspace(root);
+  });
+
+  it("detects language as 'java'", () => {
+    expect(info.language).toBe("java");
+  });
+
+  it("uses 'gradle' as the package manager", () => {
+    expect(info.packageManager).toBe("gradle");
+  });
+
+  it("uses 'gradle build' as the build command (no gradlew wrapper)", () => {
+    expect(info.buildCommand).toBe("gradle build");
+  });
+
+  it("uses 'gradle test' as the test command", () => {
+    expect(info.testCommand).toBe("gradle test");
+  });
+
+  it("reports hasTests as true when src/test exists", () => {
+    expect(info.hasTests).toBe(true);
+  });
+});
+
+describe("analyzeWorkspace — Gradle (Kotlin DSL) project", () => {
+  const root = path.join(fixturesDir, "workspace-gradle-kotlin");
+
+  let info: WorkspaceInfo;
+  beforeAll(async () => {
+    info = await analyzeWorkspace(root);
+  });
+
+  it("detects language as 'kotlin'", () => {
+    expect(info.language).toBe("kotlin");
+  });
+
+  it("uses 'gradle' as the package manager", () => {
+    expect(info.packageManager).toBe("gradle");
+  });
+});
+
+describe("analyzeWorkspace — Maven project", () => {
+  const root = path.join(fixturesDir, "workspace-maven");
+
+  let info: WorkspaceInfo;
+  beforeAll(async () => {
+    info = await analyzeWorkspace(root);
+  });
+
+  it("detects language as 'java'", () => {
+    expect(info.language).toBe("java");
+  });
+
+  it("uses 'maven' as the package manager", () => {
+    expect(info.packageManager).toBe("maven");
+  });
+
+  it("uses 'mvn package -DskipTests' as the build command (no wrapper)", () => {
+    expect(info.buildCommand).toBe("mvn package -DskipTests");
+  });
+
+  it("uses 'mvn test' as the test command", () => {
+    expect(info.testCommand).toBe("mvn test");
+  });
+
+  it("reports hasTests as true when src/test exists", () => {
+    expect(info.hasTests).toBe(true);
+  });
+});
