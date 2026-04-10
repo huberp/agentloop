@@ -3,7 +3,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { logger } from "../logger";
 import { ToolRegistry } from "../tools/registry";
 import { runSubagent } from "./runner";
-import type { WorkspaceInfo } from "../workspace";
+import type { WorkspaceContext } from "../workspace";
 import type { AgentProfileRegistry } from "../agents/registry";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,23 +75,40 @@ const PLANNER_SYSTEM_PROMPT =
 /** Build the user-facing task string sent to the planner subagent. */
 function buildPlannerTask(
   task: string,
-  workspaceInfo: WorkspaceInfo,
+  context: WorkspaceContext,
   availableTools: string[],
   availableProfiles?: Array<{ name: string; description: string }>
 ): string {
   const toolList = availableTools.length > 0 ? availableTools.join(", ") : "(none)";
+  const wi = context.workspaceInfo;
   let result =
     `Task: ${task}\n` +
-    `Workspace: language=${workspaceInfo.language}, framework=${workspaceInfo.framework}, ` +
-    `packageManager=${workspaceInfo.packageManager}, gitInitialized=${workspaceInfo.gitInitialized}`;
+    `Workspace: language=${wi.language}, framework=${wi.framework}, ` +
+    `packageManager=${wi.packageManager}, gitInitialized=${wi.gitInitialized}`;
 
-  // Include lifecycle commands so the planner can generate concrete, workspace-specific steps
+  // Include lifecycle commands so the planner can generate concrete, workspace-specific steps.
+  // These are typically empty when the context was produced by ProjectExplorer; in that case
+  // the buildSystems notes below carry the authoritative information.
   const lifecycleLines: string[] = [];
-  if (workspaceInfo.buildCommand) lifecycleLines.push(`build="${workspaceInfo.buildCommand}"`);
-  if (workspaceInfo.testCommand) lifecycleLines.push(`test="${workspaceInfo.testCommand}"`);
-  if (workspaceInfo.lintCommand) lifecycleLines.push(`lint="${workspaceInfo.lintCommand}"`);
+  if (wi.buildCommand) lifecycleLines.push(`build="${wi.buildCommand}"`);
+  if (wi.testCommand) lifecycleLines.push(`test="${wi.testCommand}"`);
+  if (wi.lintCommand) lifecycleLines.push(`lint="${wi.lintCommand}"`);
   if (lifecycleLines.length > 0) {
     result += `, ${lifecycleLines.join(", ")}`;
+  }
+
+  // Include richer build system details produced by the ProjectExplorer agent when available.
+  // The planner uses these notes to derive concrete, workspace-specific commands at runtime.
+  if (Array.isArray(context.buildSystems) && context.buildSystems.length > 0) {
+    result += `\nDetected build systems:`;
+    for (const bs of context.buildSystems as Array<{ name: string; configFile: string; notes: string }>) {
+      result += `\n  - ${bs.name} (${bs.configFile}): ${bs.notes}`;
+    }
+  }
+
+  // Free-form notes from the explorer (e.g. "multi-language monorepo")
+  if (typeof context.explorerNotes === "string" && context.explorerNotes.trim()) {
+    result += `\nWorkspace notes: ${context.explorerNotes}`;
   }
 
   result += `\nAvailable tools: ${toolList}`;
@@ -190,8 +207,13 @@ export function validatePlan(plan: Plan, registry: ToolRegistry): PlanValidation
  *
  * The planner runs without any tools — it only needs to reason and output JSON.
  *
- * @param task           Natural-language description of what the agent should accomplish.
- * @param workspaceInfo  Workspace analysis result (language, framework, etc.).
+ * @param task     Natural-language description of what the agent should accomplish.
+ * @param context  Workspace context produced by `analyzeWorkspace` + `toWorkspaceContext`,
+ *                 or by the richer `exploreWorkspace` (ProjectExplorer agent).
+ *                 When the context was produced by ProjectExplorer the `buildSystems` and
+ *                 `explorerNotes` keys are included in the planner task so the model can
+ *                 derive concrete, workspace-specific commands without relying on any
+ *                 hardcoded command strings.
  * @param registry       Tool registry used to list available tool names for the prompt.
  * @param llm            Optional LLM instance — created from config when omitted.
  * @param profileRegistry Optional profile registry; when provided, profile names and descriptions
@@ -199,7 +221,7 @@ export function validatePlan(plan: Plan, registry: ToolRegistry): PlanValidation
  */
 export async function generatePlan(
   task: string,
-  workspaceInfo: WorkspaceInfo,
+  context: WorkspaceContext,
   registry: ToolRegistry,
   llm?: BaseChatModel,
   profileRegistry?: AgentProfileRegistry
@@ -208,7 +230,7 @@ export async function generatePlan(
   const availableProfiles = profileRegistry
     ? profileRegistry.list().map((p) => ({ name: p.name, description: p.description }))
     : undefined;
-  const plannerTask = buildPlannerTask(task, workspaceInfo, availableTools, availableProfiles);
+  const plannerTask = buildPlannerTask(task, context, availableTools, availableProfiles);
 
   // Build the system prompt, replacing the {{profileList}} placeholder
   const profileListStr =
@@ -241,7 +263,7 @@ export async function generatePlan(
  * @param task          The original task string.
  * @param originalPlan  The plan that failed validation.
  * @param feedback      Human-readable description of what is wrong.
- * @param workspaceInfo Workspace analysis result.
+ * @param context       Workspace context (same object passed to `generatePlan`).
  * @param registry      Tool registry used to supply the up-to-date tool list.
  * @param llm           Optional LLM instance.
  */
@@ -249,7 +271,7 @@ export async function refinePlan(
   task: string,
   originalPlan: Plan,
   feedback: string,
-  workspaceInfo: WorkspaceInfo,
+  context: WorkspaceContext,
   registry: ToolRegistry,
   llm?: BaseChatModel
 ): Promise<Plan> {

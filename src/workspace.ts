@@ -23,6 +23,28 @@ export interface WorkspaceInfo {
   gitInitialized: boolean;
 }
 
+/**
+ * Generic workspace context map that flows through the planning pipeline.
+ *
+ * The well-known `workspaceInfo` key holds a flat `WorkspaceInfo` summary that
+ * is backward-compatible with `generatePlan()` and the rest of the orchestration
+ * pipeline.  Additional keys may be contributed by exploration agents — for
+ * example `buildSystems` and `explorerNotes` from `ProjectExplorer` — without
+ * requiring changes to existing consumers.
+ */
+export interface WorkspaceContext extends Record<string, unknown> {
+  /** Flat summary required by the planner and orchestrator. */
+  workspaceInfo: WorkspaceInfo;
+}
+
+/**
+ * Wrap a `WorkspaceInfo` in a minimal `WorkspaceContext`.
+ * Use this when calling `generatePlan()` with the result of `analyzeWorkspace()`.
+ */
+export function toWorkspaceContext(info: WorkspaceInfo): WorkspaceContext {
+  return { workspaceInfo: info };
+}
+
 /** Lifecycle target names extracted from Makefiles. */
 const LIFECYCLE_TARGETS = ["test", "lint", "build", "run", "install"] as const;
 

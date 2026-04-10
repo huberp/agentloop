@@ -14,23 +14,25 @@ import { generatePlan } from "../../../src/subagents/planner";
 import { appConfig } from "../../../src/config";
 import { createMockLlm } from "../helpers/mock-llm";
 import { createWorkspaceFixture } from "../helpers/workspace-fixture";
-import type { WorkspaceInfo } from "../../../src/workspace";
+import type { WorkspaceContext } from "../../../src/workspace";
 
 // When E2E_USE_REAL_LLM=true the test uses undefined (falls back to createLLM).
 // Note: that requires removing the jest.mock above and setting a real MISTRAL_API_KEY.
 const USE_REAL_LLM = process.env.E2E_USE_REAL_LLM === "true";
 
-/** Representative workspace metadata used as planner input. */
-const MOCK_WORKSPACE: WorkspaceInfo = {
-  language: "node",
-  framework: "express",
-  packageManager: "npm",
-  hasTests: true,
-  testCommand: "npm test",
-  lintCommand: "npm run lint",
-  buildCommand: "npm run build",
-  entryPoints: ["src/index.ts"],
-  gitInitialized: false,
+/** Representative workspace context used as planner input. */
+const MOCK_WORKSPACE: WorkspaceContext = {
+  workspaceInfo: {
+    language: "node",
+    framework: "express",
+    packageManager: "npm",
+    hasTests: true,
+    testCommand: "npm test",
+    lintCommand: "npm run lint",
+    buildCommand: "npm run build",
+    entryPoints: ["src/index.ts"],
+    gitInitialized: false,
+  },
 };
 
 describe("E2E: Generate a plan for a feature", () => {

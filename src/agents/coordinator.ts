@@ -6,7 +6,7 @@ import { runSubagent } from "../subagents/runner";
 import { generatePlan } from "../subagents/planner";
 import { executePlan } from "../orchestrator";
 import type { ExecutionOptions, ExecutionResult } from "../orchestrator";
-import type { WorkspaceInfo } from "../workspace";
+import type { WorkspaceContext } from "../workspace";
 import type { AgentProfile } from "./types";
 import type { AgentProfileRegistry } from "./registry";
 
@@ -122,8 +122,13 @@ export interface CoordinatedExecuteOptions {
   registry: ToolRegistry;
   /** Profile registry used for routing and per-step profile resolution. */
   profileRegistry: AgentProfileRegistry;
-  /** Workspace analysis result (language, framework, etc.) — required by the planner. */
-  workspaceInfo: WorkspaceInfo;
+  /**
+   * Workspace context for the planner.  Use `toWorkspaceContext(await analyzeWorkspace(root))`
+   * for a quick heuristic analysis, or pass the result of `exploreWorkspace()` (ProjectExplorer
+   * agent) for a richer, LLM-derived context that handles multi-build-system workspaces without
+   * any hardcoded command strings.
+   */
+  workspaceContext: WorkspaceContext;
   /** Optional LLM instance; created from config when omitted. */
   llm?: BaseChatModel;
   /**
@@ -168,7 +173,7 @@ export async function coordinatedExecute(
   const {
     registry,
     profileRegistry,
-    workspaceInfo,
+    workspaceContext,
     llm,
     executionOptions = {},
     invoke,
@@ -182,7 +187,7 @@ export async function coordinatedExecute(
   const profile = await routeRequest(request, profileRegistry, registry, llm);
 
   // Step 2: Generate a plan (with profile annotations when a registry is available)
-  const plan = await generatePlan(request, workspaceInfo, registry, llm, profileRegistry);
+  const plan = await generatePlan(request, workspaceContext, registry, llm, profileRegistry);
 
   // Step 3: Choose execution path based on plan size
   if (plan.steps.length <= planThreshold) {

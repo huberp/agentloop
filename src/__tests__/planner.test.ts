@@ -9,7 +9,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { ToolRegistry } from "../tools/registry";
 import { generatePlan, validatePlan, refinePlan } from "../subagents/planner";
 import type { Plan } from "../subagents/planner";
-import type { WorkspaceInfo } from "../workspace";
+import type { WorkspaceContext } from "../workspace";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -36,17 +36,19 @@ function makeRegistry(...names: string[]): ToolRegistry {
   return registry;
 }
 
-/** A representative workspace used across tests. */
-const MOCK_WORKSPACE: WorkspaceInfo = {
-  language: "node",
-  framework: "express",
-  packageManager: "npm",
-  hasTests: true,
-  testCommand: "npm test",
-  lintCommand: "npm run lint",
-  buildCommand: "npm run build",
-  entryPoints: ["src/index.ts"],
-  gitInitialized: true,
+/** A representative workspace context used across tests. */
+const MOCK_WORKSPACE: WorkspaceContext = {
+  workspaceInfo: {
+    language: "node",
+    framework: "express",
+    packageManager: "npm",
+    hasTests: true,
+    testCommand: "npm test",
+    lintCommand: "npm run lint",
+    buildCommand: "npm run build",
+    entryPoints: ["src/index.ts"],
+    gitInitialized: true,
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -459,5 +461,94 @@ describe("generatePlan — agentProfile field", () => {
     expect(userMsg).toBeDefined();
     expect(userMsg!.content).toContain("coder");
     expect(userMsg!.content).toContain("devops");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WorkspaceContext — richer context from ProjectExplorer
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("generatePlan — WorkspaceContext with buildSystems", () => {
+  it("includes buildSystems notes in the planner task when context has buildSystems", async () => {
+    const invoke = jest.fn().mockResolvedValueOnce({
+      content: JSON.stringify({
+        steps: [{ description: "build the project", toolsNeeded: [], estimatedComplexity: "medium" }],
+      }),
+      tool_calls: [],
+    });
+
+    const mockLlm = {
+      bindTools: jest.fn().mockReturnValue({ invoke }),
+    } as unknown as BaseChatModel;
+
+    const richContext: WorkspaceContext = {
+      workspaceInfo: {
+        language: "rust",
+        framework: "none",
+        packageManager: "cargo",
+        hasTests: true,
+        testCommand: "",
+        lintCommand: "",
+        buildCommand: "",
+        entryPoints: [],
+        gitInitialized: true,
+      },
+      buildSystems: [
+        {
+          name: "cargo",
+          configFile: "Cargo.toml",
+          notes: "Workspace with members: core, cli. Use --workspace flag for full builds.",
+        },
+      ],
+    };
+
+    await generatePlan("verify the build", richContext, new ToolRegistry(), mockLlm);
+
+    const messages: Array<{ content: string }> = invoke.mock.calls[0][0];
+    const userMsg = messages.find(
+      (m) => typeof m.content === "string" && m.content.includes("verify the build")
+    );
+    expect(userMsg).toBeDefined();
+    // buildSystems notes should appear in the task
+    expect(userMsg!.content).toContain("cargo");
+    expect(userMsg!.content).toContain("Cargo.toml");
+    expect(userMsg!.content).toContain("--workspace");
+  });
+
+  it("includes explorerNotes in the planner task when context has explorerNotes", async () => {
+    const invoke = jest.fn().mockResolvedValueOnce({
+      content: JSON.stringify({
+        steps: [{ description: "step", toolsNeeded: [], estimatedComplexity: "low" }],
+      }),
+      tool_calls: [],
+    });
+
+    const mockLlm = {
+      bindTools: jest.fn().mockReturnValue({ invoke }),
+    } as unknown as BaseChatModel;
+
+    const contextWithNotes: WorkspaceContext = {
+      workspaceInfo: {
+        language: "cpp",
+        framework: "none",
+        packageManager: "cmake",
+        hasTests: false,
+        testCommand: "",
+        lintCommand: "",
+        buildCommand: "",
+        entryPoints: [],
+        gitInitialized: false,
+      },
+      explorerNotes: "Multi-language monorepo: C++ core with Python bindings",
+    };
+
+    await generatePlan("verify-the-cpp-bindings", contextWithNotes, new ToolRegistry(), mockLlm);
+
+    const messages: Array<{ content: string }> = invoke.mock.calls[0][0];
+    const userMsg = messages.find(
+      (m) => typeof m.content === "string" && m.content.includes("verify-the-cpp-bindings")
+    );
+    expect(userMsg).toBeDefined();
+    expect(userMsg!.content).toContain("Multi-language monorepo");
   });
 });
