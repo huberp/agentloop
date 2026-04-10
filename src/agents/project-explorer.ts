@@ -27,7 +27,7 @@ export interface BuildSystemInfo {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const EXPLORER_SYSTEM_PROMPT =
-  `You are a workspace exploration agent. Your job is to analyse a software project's file system ` +
+  `You are a workspace exploration agent. Your job is to analyze a software project's file system ` +
   `using the available tools and produce a structured JSON description of the workspace.\n\n` +
   `Exploration steps (use the tools to gather information):\n` +
   `1. Call file-list with recursive=true to understand the top-level directory structure.\n` +
