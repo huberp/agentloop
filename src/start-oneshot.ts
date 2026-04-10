@@ -16,6 +16,7 @@
  */
 
 import { parseArgs } from "util";
+import { stripApiKeyArg } from "./config";
 
 // ---------------------------------------------------------------------------
 // Help text
@@ -30,6 +31,9 @@ Commands:
   websearch     Invoke the web-search tool directly
   web-fetch     Invoke the web-fetch tool directly
   list          List tools, agent profiles, or other capabilities
+
+Global options:
+      --api-key <key>   Mistral API key (overrides MISTRAL_API_KEY in .env)
 
 Run 'agentloop <command> --help' for command-specific options.
 `
@@ -46,6 +50,7 @@ Options:
   -p, --profile <name>   Agent profile to activate (e.g. coder, planner)
       --stream           Stream output tokens to stdout
       --json             Output result as JSON { "output": "..." }
+      --api-key <key>    Mistral API key (overrides MISTRAL_API_KEY in .env)
 `
   );
 }
@@ -58,6 +63,7 @@ Options:
   -q, --query <text>     Search query (required)
   -n, --max-results <n>  Maximum results to return (default: provider default)
       --json             Output raw JSON result array
+      --api-key <key>    Mistral API key (overrides MISTRAL_API_KEY in .env)
 `
   );
 }
@@ -69,6 +75,7 @@ function printWebFetchHelp(): void {
 Options:
   -u, --url <url>        URL to fetch (required)
       --json             Output raw JSON { title, markdown, ... }
+      --api-key <key>    Mistral API key (overrides MISTRAL_API_KEY in .env)
 `
   );
 }
@@ -86,6 +93,7 @@ Capabilities:
 Options:
       --json     Output as JSON array instead of table
       --verbose  Include full description, permissions, source path, and metadata
+      --api-key <key>  Mistral API key (overrides MISTRAL_API_KEY in .env)
 `
   );
 }
@@ -551,18 +559,23 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  // Remove --api-key <value> from the subcommand args. The override was already
+  // applied by config.ts at module load; this keeps the arg list clean so that
+  // per-subcommand parseArgs({ strict: true }) calls don't reject the flag.
+  const cleanRest = stripApiKeyArg(rest);
+
   switch (subcommand) {
     case "agent":
-      await runAgent(rest);
+      await runAgent(cleanRest);
       break;
     case "websearch":
-      await runWebSearch(rest);
+      await runWebSearch(cleanRest);
       break;
     case "web-fetch":
-      await runWebFetch(rest);
+      await runWebFetch(cleanRest);
       break;
     case "list":
-      await runList(rest);
+      await runList(cleanRest);
       break;
     default:
       process.stderr.write(`Unknown command: "${subcommand}"\n\n`);
