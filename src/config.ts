@@ -2,6 +2,31 @@ import * as dotenv from "dotenv";
 
 dotenv.config({ quiet: true });
 
+// ---------------------------------------------------------------------------
+// --api-key CLI override — single encapsulation point
+//
+// All logic related to the --api-key command-line flag lives here:
+//   1. Early argv scan: runs before appConfig is built so every start mode
+//      (cli, tui, oneshot, direct index) picks up the key automatically.
+//      Exits with an error if --api-key is present but has no value, so
+//      the behaviour is the same as stripApiKeyArg() below.
+//   2. applyApiKeyOverride(): programmatic override for tests / library use.
+//   3. stripApiKeyArg(): removes --api-key <value> from a parsed args array
+//      so strict parseArgs() calls (e.g. in start-oneshot.ts) don't reject
+//      the flag as unknown. Callers receive a clean array; no other module
+//      needs to know about the flag.
+// ---------------------------------------------------------------------------
+(function applyCliApiKeyOverride() {
+  const idx = process.argv.indexOf("--api-key");
+  if (idx === -1) return;
+  const value = process.argv[idx + 1];
+  if (!value || value.startsWith("-")) {
+    process.stderr.write("Error: --api-key requires a value\n");
+    process.exit(1);
+  }
+  process.env.MISTRAL_API_KEY = value;
+})();
+
 function asBoolean(value: string | undefined, defaultValue: boolean): boolean {
   if (value === undefined) {
     return defaultValue;
@@ -55,6 +80,9 @@ function parseMcpServers(value: string | undefined): McpServerEntry[] {
 }
 
 export const appConfig = {
+  // MISTRAL_API_KEY is read from process.env after the early --api-key CLI
+  // override (see applyCliApiKeyOverride above) and can also be updated at
+  // runtime via applyApiKeyOverride().
   mistralApiKey: process.env.MISTRAL_API_KEY ?? "",
   // Maximum number of agentic iterations before aborting with a warning
   maxIterations: parseInt(process.env.MAX_ITERATIONS ?? "20", 10),
@@ -187,3 +215,38 @@ export const appConfig = {
     timestamp: asBoolean(process.env.LOG_TIMESTAMP, true),
   },
 };
+
+/**
+ * Override the Mistral API key at runtime.
+ *
+ * Updates both `process.env.MISTRAL_API_KEY` and the live `appConfig` object
+ * so the new key is used by any code that reads either. Useful in tests and
+ * for programmatic library usage.
+ */
+export function applyApiKeyOverride(apiKey: string): void {
+  process.env.MISTRAL_API_KEY = apiKey;
+  appConfig.mistralApiKey = apiKey;
+}
+
+/**
+ * Remove `--api-key <value>` from `args` and return the cleaned array.
+ *
+ * Call this in entry points that use `parseArgs({ strict: true })` so the
+ * global flag is not rejected as an unknown option. The actual key override
+ * has already been applied by the early argv scan above; this function only
+ * handles the presentational concern of cleaning the arg list.
+ *
+ * Exits with an error message if `--api-key` is present but has no value.
+ */
+export function stripApiKeyArg(args: string[]): string[] {
+  const idx = args.indexOf("--api-key");
+  if (idx === -1) return args;
+  const value = args[idx + 1];
+  if (!value || value.startsWith("-")) {
+    process.stderr.write("Error: --api-key requires a value\n");
+    process.exit(1);
+  }
+  const cleaned = args.slice();
+  cleaned.splice(idx, 2);
+  return cleaned;
+}

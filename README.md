@@ -176,6 +176,28 @@ npm run oneshot -- list providers
 | `skills` | All active skills with name, source, description |
 | `providers` | Configured LLM and search providers with their active status |
 
+### Global option: `--api-key`
+
+Every subcommand accepts a global `--api-key` flag that overrides the `MISTRAL_API_KEY` value from `.env`.
+This makes it easy to supply the key from CI secrets or per-invocation without modifying your environment file:
+
+```bash
+# Provide the API key directly on the command line
+npm run oneshot -- agent --api-key "sk-my-key" -u "Summarise the README"
+
+# Useful in CI pipelines:
+npm run oneshot -- agent --api-key "$MISTRAL_API_KEY" -u "Run a quick sanity check"
+```
+
+The override is handled entirely inside the `config` module (`applyApiKeyOverride`) so no other part of the codebase needs to know where the key came from.
+
+For CI use, copy `.env.test` (which intentionally omits `MISTRAL_API_KEY`) to `.env` and inject the key via `--api-key`:
+
+```bash
+cp .env.test .env
+npm run oneshot -- agent --api-key "$MISTRAL_API_KEY" -u "Your prompt"
+```
+
 ## Deployment
 
 ### Docker

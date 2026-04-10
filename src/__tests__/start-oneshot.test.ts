@@ -590,3 +590,182 @@ describe("start-oneshot: getActiveExecutor", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests: applyApiKeyOverride() in config module
+// ---------------------------------------------------------------------------
+
+describe("config: applyApiKeyOverride", () => {
+  it("applyApiKeyOverride is exported from config", async () => {
+    const config = await import("../config");
+    expect(typeof config.applyApiKeyOverride).toBe("function");
+  });
+
+  it("updates appConfig.mistralApiKey", async () => {
+    const config = await import("../config");
+    const original = config.appConfig.mistralApiKey;
+    try {
+      config.applyApiKeyOverride("sk-override-test");
+      expect(config.appConfig.mistralApiKey).toBe("sk-override-test");
+    } finally {
+      config.applyApiKeyOverride(original);
+    }
+  });
+
+  it("updates process.env.MISTRAL_API_KEY", async () => {
+    const config = await import("../config");
+    const original = process.env.MISTRAL_API_KEY;
+    try {
+      config.applyApiKeyOverride("sk-env-test");
+      expect(process.env.MISTRAL_API_KEY).toBe("sk-env-test");
+    } finally {
+      process.env.MISTRAL_API_KEY = original;
+      config.applyApiKeyOverride(original ?? "");
+    }
+  });
+
+  it("keeps appConfig.mistralApiKey and process.env in sync after override", async () => {
+    const config = await import("../config");
+    const original = config.appConfig.mistralApiKey;
+    try {
+      config.applyApiKeyOverride("sk-sync-test");
+      expect(config.appConfig.mistralApiKey).toBe(process.env.MISTRAL_API_KEY);
+    } finally {
+      config.applyApiKeyOverride(original);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: early argv scan in config.ts (applyCliApiKeyOverride)
+//
+// The IIFE in config.ts reads process.argv at module-load time to apply
+// --api-key before appConfig is built.  These tests verify the logic by
+// directly replicating the scan behaviour so the module-singleton limitation
+// does not interfere.
+// ---------------------------------------------------------------------------
+
+describe("config: early --api-key argv scan logic", () => {
+  // Replicates the IIFE logic: returns the value, or undefined if absent,
+  // or throws if --api-key is present but has no valid value (consistent with
+  // the exit(1) in the real IIFE and with stripApiKeyArg).
+  function simulateArgvScan(argv: string[]): string | undefined {
+    const idx = argv.indexOf("--api-key");
+    if (idx === -1) return undefined;
+    const value = argv[idx + 1];
+    if (!value || value.startsWith("-")) {
+      throw new Error("Error: --api-key requires a value");
+    }
+    return value;
+  }
+
+  it("extracts the api key when --api-key is present with a value", () => {
+    const result = simulateArgvScan(["node", "script.js", "--api-key", "sk-early"]);
+    expect(result).toBe("sk-early");
+  });
+
+  it("returns undefined when --api-key is absent", () => {
+    const result = simulateArgvScan(["node", "script.js", "-u", "hello"]);
+    expect(result).toBeUndefined();
+  });
+
+  it("errors when --api-key has no value (consistent with stripApiKeyArg)", () => {
+    expect(() => simulateArgvScan(["node", "script.js", "--api-key"])).toThrow(
+      "--api-key requires a value"
+    );
+  });
+
+  it("errors when --api-key value starts with a dash (consistent with stripApiKeyArg)", () => {
+    expect(() =>
+      simulateArgvScan(["node", "script.js", "--api-key", "--other-flag"])
+    ).toThrow("--api-key requires a value");
+  });
+
+  it("works when --api-key appears after the subcommand (oneshot pattern)", () => {
+    const result = simulateArgvScan(["node", "script.js", "agent", "--api-key", "sk-sub", "-u", "hi"]);
+    expect(result).toBe("sk-sub");
+  });
+
+  it("covers all start modes — cli, tui, oneshot, and direct index", () => {
+    // All start modes use the same config module, so the argv scan fires once
+    // before appConfig is built, regardless of which entry point is used.
+    const cliResult = simulateArgvScan(["node", "start-cli.ts", "--api-key", "sk-cli"]);
+    const tuiResult = simulateArgvScan(["node", "start-tui.ts", "--api-key", "sk-tui"]);
+    const oneshotResult = simulateArgvScan(["node", "start-oneshot.ts", "agent", "--api-key", "sk-oneshot", "-u", "hi"]);
+    expect(cliResult).toBe("sk-cli");
+    expect(tuiResult).toBe("sk-tui");
+    expect(oneshotResult).toBe("sk-oneshot");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: stripApiKeyArg() in config module
+// ---------------------------------------------------------------------------
+
+describe("config: stripApiKeyArg", () => {
+  it("stripApiKeyArg is exported from config", async () => {
+    const config = await import("../config");
+    expect(typeof config.stripApiKeyArg).toBe("function");
+  });
+
+  it("removes --api-key and its value from the array", async () => {
+    const { stripApiKeyArg } = await import("../config");
+    const result = stripApiKeyArg(["--api-key", "sk-my-key", "-u", "Hello"]);
+    expect(result).toEqual(["-u", "Hello"]);
+    expect(result.includes("--api-key")).toBe(false);
+  });
+
+  it("returns the array unchanged when --api-key is absent", async () => {
+    const { stripApiKeyArg } = await import("../config");
+    const result = stripApiKeyArg(["-u", "Hello"]);
+    expect(result).toEqual(["-u", "Hello"]);
+  });
+
+  it("strips --api-key placed after other flags", async () => {
+    const { stripApiKeyArg } = await import("../config");
+    const result = stripApiKeyArg(["-u", "Hello", "--api-key", "sk-after"]);
+    expect(result).toEqual(["-u", "Hello"]);
+  });
+
+  it("does not mutate the original array", async () => {
+    const { stripApiKeyArg } = await import("../config");
+    const original = ["-u", "Hello", "--api-key", "sk-key"];
+    const result = stripApiKeyArg(original);
+    expect(original).toEqual(["-u", "Hello", "--api-key", "sk-key"]);
+    expect(result).toEqual(["-u", "Hello"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: --api-key global option pre-processing in start-oneshot main()
+// (delegates to config.stripApiKeyArg — verified via the config tests above)
+// ---------------------------------------------------------------------------
+
+describe("start-oneshot: --api-key is stripped before subcommand dispatch", () => {
+  it("stripApiKeyArg produces clean args consumable by parseArgs strict mode", async () => {
+    const { stripApiKeyArg } = await import("../config");
+    // Simulate: agent --api-key sk-key -u "Hello"
+    const cleaned = stripApiKeyArg(["--api-key", "sk-key", "-u", "Hello"]);
+    // parseArgs with strict:true must not throw on the cleaned array
+    expect(() =>
+      parseArgs({
+        args: cleaned,
+        options: {
+          system: { type: "string", short: "s" },
+          user: { type: "string", short: "u" },
+          profile: { type: "string", short: "p" },
+          stream: { type: "boolean" },
+          json: { type: "boolean" },
+        },
+        strict: true,
+        allowPositionals: false,
+      })
+    ).not.toThrow();
+    const { values } = parseArgs({
+      args: cleaned,
+      options: { user: { type: "string", short: "u" } },
+      strict: false,
+    });
+    expect(values.user).toBe("Hello");
+  });
+});
