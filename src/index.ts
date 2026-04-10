@@ -30,6 +30,7 @@ import {
 import { streamWithTools } from "./streaming";
 import { spinner } from "./spinner";
 import { runInkTui } from "./ui/tui";
+import { graphExecutor } from "./langgraph";
 
 // Re-export the singleton tool registry (created in tools/registry.ts)
 export { toolRegistry };
@@ -436,10 +437,53 @@ export const agentExecutor = {
   stream: executeWithToolsStream,
 };
 
+/**
+ * Build an executor adapter for the LangGraphJS orchestrator that conforms to
+ * the same shape as agentExecutor (invoke + stream). Since graphExecutor does
+ * not yet support token-level streaming, `stream` yields the full output as a
+ * single chunk.
+ *
+ * Parameters `profileName` and `runOptions` are accepted for API compatibility
+ * with agentExecutor but are not yet forwarded to the graph orchestrator.
+ */
+function createGraphExecutorAdapter() {
+  return {
+    invoke: async (input: string, _profileName?: string, _runOptions?: AgentRunOptions) => {
+      await ensureInitialized();
+      const result = await graphExecutor.invoke(input, {}, { registry: toolRegistry });
+      return { output: result.output };
+    },
+    async *stream(input: string, _profileName?: string, _runOptions?: AgentRunOptions): AsyncGenerator<string> {
+      await ensureInitialized();
+      const result = await graphExecutor.invoke(input, {}, { registry: toolRegistry });
+      yield result.output;
+    },
+  };
+}
+
+// Memoised graph executor adapter — created once on first use
+let _graphExecutorAdapter: ReturnType<typeof createGraphExecutorAdapter> | null = null;
+
+/**
+ * Return the active executor based on the ORCHESTRATOR config key.
+ * "langgraph" → graphExecutor adapter; anything else → agentExecutor.
+ */
+export function getActiveExecutor() {
+  if (appConfig.orchestrator === "langgraph") {
+    if (!_graphExecutorAdapter) {
+      _graphExecutorAdapter = createGraphExecutorAdapter();
+    }
+    return _graphExecutorAdapter;
+  }
+  return agentExecutor;
+}
+
 // Main loop
 export async function main() {
+  const executor = getActiveExecutor();
+
   if (appConfig.uiMode === "tui") {
-    await runInkTui(agentExecutor);
+    await runInkTui(executor);
     return;
   }
 
@@ -448,7 +492,8 @@ export async function main() {
     output: process.stdout,
   });
 
-  console.log("Agent: Hello! I'm ready to help. Type 'exit' to quit.");
+  const label = appConfig.orchestrator === "langgraph" ? "Agent (langgraph)" : "Agent";
+  console.log(`${label}: Hello! I'm ready to help. Type 'exit' to quit.`);
 
   while (true) {
     const input = await new Promise<string>((resolve) => {
@@ -456,23 +501,23 @@ export async function main() {
     });
 
     if (input.toLowerCase() === "exit") {
-      console.log("Agent: Goodbye!");
+      console.log(`${label}: Goodbye!`);
       break;
     }
 
     try {
       if (appConfig.streamingEnabled) {
         // Streaming provides its own token-by-token feedback — no spinner needed.
-        process.stdout.write("Agent: ");
-        for await (const chunk of agentExecutor.stream(input)) {
+        process.stdout.write(`${label}: `);
+        for await (const chunk of executor.stream(input)) {
           process.stdout.write(chunk);
         }
         process.stdout.write("\n");
       } else {
         spinner.start("Thinking…");
-        const result = await agentExecutor.invoke(input);
+        const result = await executor.invoke(input);
         spinner.stop();
-        console.log("Agent:", result.output);
+        console.log(`${label}:`, result.output);
       }
     } catch (error) {
       spinner.stop();

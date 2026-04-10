@@ -162,6 +162,9 @@ export const appConfig = {
   skillsDir: process.env.SKILLS_DIR ?? "",
   // Agent profiles directory (Task 7.1); auto-loaded on startup
   agentProfilesDir: process.env.AGENT_PROFILES_DIR ?? "",
+  // Orchestrator engine: "default" uses the existing agentExecutor; "langgraph" uses the
+  // LangGraphJS-based graphExecutor with blocks-plan, fork/join, and replanning.
+  orchestrator: (process.env.ORCHESTRATOR ?? "default").toLowerCase() as "default" | "langgraph",
   // Coordinator: automatically route requests to the best agent profile when no profile is specified
   coordinatorEnabled: asBoolean(process.env.COORDINATOR_ENABLED, false),
   // Coordinator: number of plan steps above which coordinatedExecute() uses the plan+orchestrate path

@@ -498,3 +498,95 @@ describe("start-oneshot: list JSON output", () => {
     expect(parsed[0]).toHaveProperty("source");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests: getActiveExecutor() / ORCHESTRATOR config integration
+// ---------------------------------------------------------------------------
+
+describe("start-oneshot: getActiveExecutor", () => {
+  it("getActiveExecutor is a function exported from index", async () => {
+    const { getActiveExecutor } = await import("../index");
+    expect(typeof getActiveExecutor).toBe("function");
+  });
+
+  it("returns agentExecutor when ORCHESTRATOR is 'default'", async () => {
+    const { getActiveExecutor, agentExecutor } = await import("../index");
+    // Default config is "default"
+    const executor = getActiveExecutor();
+    expect(executor.invoke).toBe(agentExecutor.invoke);
+  });
+
+  it("returns a graph executor adapter when ORCHESTRATOR is 'langgraph'", async () => {
+    // Temporarily override the config to "langgraph"
+    const config = await import("../config");
+    const original = config.appConfig.orchestrator;
+    (config.appConfig as any).orchestrator = "langgraph";
+    try {
+      const { getActiveExecutor, agentExecutor } = await import("../index");
+      const executor = getActiveExecutor();
+      // The adapter should NOT be the same reference as agentExecutor
+      expect(executor.invoke).not.toBe(agentExecutor.invoke);
+      expect(typeof executor.invoke).toBe("function");
+      expect(typeof executor.stream).toBe("function");
+    } finally {
+      (config.appConfig as any).orchestrator = original;
+    }
+  });
+
+  it("graph executor adapter invoke returns { output: string }", async () => {
+    const config = await import("../config");
+    const original = config.appConfig.orchestrator;
+    (config.appConfig as any).orchestrator = "langgraph";
+
+    // Override mock LLM to return a valid blocks plan then a step response
+    const planJson = JSON.stringify({
+      version: "2.0",
+      goal: "say hello",
+      blocks: [{ type: "step", description: "greet", toolsNeeded: [], estimatedComplexity: "low" }],
+    });
+    mockLlmInvoke
+      .mockResolvedValueOnce({ content: planJson, tool_calls: [] })
+      .mockResolvedValueOnce({ content: "Hello!", tool_calls: [] });
+
+    try {
+      const { getActiveExecutor } = await import("../index");
+      const executor = getActiveExecutor();
+      const result = await executor.invoke("say hello");
+      expect(result).toHaveProperty("output");
+      expect(typeof result.output).toBe("string");
+    } finally {
+      (config.appConfig as any).orchestrator = original;
+      mockLlmInvoke.mockResolvedValue({ content: "mocked response", tool_calls: [] });
+    }
+  });
+
+  it("graph executor adapter stream yields a string", async () => {
+    const config = await import("../config");
+    const original = config.appConfig.orchestrator;
+    (config.appConfig as any).orchestrator = "langgraph";
+
+    // Override mock LLM to return a valid blocks plan then a step response
+    const planJson = JSON.stringify({
+      version: "2.0",
+      goal: "say hello",
+      blocks: [{ type: "step", description: "greet", toolsNeeded: [], estimatedComplexity: "low" }],
+    });
+    mockLlmInvoke
+      .mockResolvedValueOnce({ content: planJson, tool_calls: [] })
+      .mockResolvedValueOnce({ content: "Hello!", tool_calls: [] });
+
+    try {
+      const { getActiveExecutor } = await import("../index");
+      const executor = getActiveExecutor();
+      const chunks: string[] = [];
+      for await (const chunk of executor.stream("say hello")) {
+        chunks.push(chunk);
+      }
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(typeof chunks[0]).toBe("string");
+    } finally {
+      (config.appConfig as any).orchestrator = original;
+      mockLlmInvoke.mockResolvedValue({ content: "mocked response", tool_calls: [] });
+    }
+  });
+});
