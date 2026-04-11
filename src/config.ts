@@ -193,10 +193,6 @@ export const appConfig = {
   // Orchestrator engine: "default" uses the existing agentExecutor; "langgraph" uses the
   // LangGraphJS-based graphExecutor with blocks-plan, fork/join, and replanning.
   orchestrator: (process.env.ORCHESTRATOR ?? "default").toLowerCase() as "default" | "langgraph",
-  // Coordinator: automatically route requests to the best agent profile when no profile is specified
-  coordinatorEnabled: asBoolean(process.env.COORDINATOR_ENABLED, false),
-  // Coordinator: number of plan steps above which coordinatedExecute() uses the plan+orchestrate path
-  coordinatorPlanThreshold: parseInt(process.env.COORDINATOR_PLAN_THRESHOLD ?? "1", 10),
   // Observability & Tracing (Task 4.1)
   tracingEnabled: asBoolean(process.env.TRACING_ENABLED, false),
   // Directory where per-invocation trace JSON files are written

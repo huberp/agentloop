@@ -19,7 +19,6 @@ import { getCachedPromptContext } from "./prompts/context";
 import { registerMcpTools } from "./mcp/bridge";
 import { agentProfileRegistry } from "./agents/registry";
 import { activateProfile } from "./agents/activator";
-import { routeRequest } from "./agents/coordinator";
 import type { AgentRuntimeConfig } from "./agents/types";
 import {
   type Tracer,
@@ -155,13 +154,6 @@ async function executeWithTools(input: string, profileName?: string, runOptions?
       logger.warn({ profileName }, "Requested agent profile not found, using defaults");
     } else {
       runtimeConfig = activateProfile(profile);
-    }
-  } else if (appConfig.coordinatorEnabled) {
-    // Auto-route: use the coordinator to select the best profile for this request
-    const routedProfile = await routeRequest(input, agentProfileRegistry, toolRegistry, llm);
-    if (routedProfile) {
-      logger.info({ profileName: routedProfile.name }, "Coordinator auto-selected agent profile");
-      runtimeConfig = activateProfile(routedProfile);
     }
   }
 
@@ -446,16 +438,53 @@ export const agentExecutor = {
  * Parameters `profileName` and `runOptions` are accepted for API compatibility
  * with agentExecutor but are not yet forwarded to the graph orchestrator.
  */
+/** Max number of previous turns to include in the conversation digest sent to the planner. */
+const GRAPH_HISTORY_TURNS = 6;
+
+/** Build a compact conversation digest from the last N human/AI turns in chatHistory. */
+async function buildConversationDigest(maxTurns: number): Promise<string | undefined> {
+  const messages = await chatHistory.getMessages();
+  if (messages.length === 0) return undefined;
+
+  const relevant = messages
+    .filter((m) => m._getType() === "human" || m._getType() === "ai")
+    .slice(-maxTurns * 2); // each turn = 1 human + 1 ai message
+
+  if (relevant.length === 0) return undefined;
+
+  return relevant
+    .map((m) => {
+      const role = m._getType() === "human" ? "User" : "Assistant";
+      const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+      return `${role}: ${content.slice(0, 300)}`;
+    })
+    .join("\n");
+}
+
 function createGraphExecutorAdapter() {
   return {
     invoke: async (input: string, _profileName?: string, _runOptions?: AgentRunOptions) => {
       await ensureInitialized();
-      const result = await graphExecutor.invoke(input, {}, { registry: toolRegistry });
+      const conversationHistory = await buildConversationDigest(GRAPH_HISTORY_TURNS);
+      await chatHistory.addMessage(new HumanMessage(input));
+      const result = await graphExecutor.invoke(
+        input,
+        { sharedContext: conversationHistory ? { conversationHistory } : {} },
+        { registry: toolRegistry },
+      );
+      await chatHistory.addMessage(new AIMessage(result.output));
       return { output: result.output };
     },
     async *stream(input: string, _profileName?: string, _runOptions?: AgentRunOptions): AsyncGenerator<string> {
       await ensureInitialized();
-      const result = await graphExecutor.invoke(input, {}, { registry: toolRegistry });
+      const conversationHistory = await buildConversationDigest(GRAPH_HISTORY_TURNS);
+      await chatHistory.addMessage(new HumanMessage(input));
+      const result = await graphExecutor.invoke(
+        input,
+        { sharedContext: conversationHistory ? { conversationHistory } : {} },
+        { registry: toolRegistry },
+      );
+      await chatHistory.addMessage(new AIMessage(result.output));
       yield result.output;
     },
   };

@@ -191,10 +191,19 @@ export function buildRuntimeContextBody(): string {
     second: "2-digit",
   });
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+  let shellHint: string;
+  if (process.platform === "win32") {
+    shellHint = "Windows — prefer PowerShell (pwsh / powershell) for shell commands; do NOT use Unix paths like /tmp";
+  } else {
+    shellHint = `${process.platform} — shell: ${process.env.SHELL ?? "/bin/sh"}`;
+  }
+
   return [
     "Runtime context:",
     `- Current date/time: ${localDate} (${tz}) | ISO: ${isoDate}`,
     `- Platform: ${process.platform} / ${process.arch}`,
+    `- Shell: ${shellHint}`,
     `- Node.js: ${process.version}`,
   ].join("\n");
 }

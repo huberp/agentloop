@@ -21,11 +21,11 @@ import type { CompiledPlanNode, StepExecResult } from "./types";
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Map complexity to iteration budget (reuses orchestrator convention). */
+/** Map complexity to iteration budget. */
 function iterationBudget(complexity: "low" | "medium" | "high"): number {
-  if (complexity === "high") return 10;
-  if (complexity === "medium") return 5;
-  return 3;
+  if (complexity === "high") return 20;
+  if (complexity === "medium") return 12;
+  return 6;
 }
 
 /** Markers that trigger a replan request from step output. */
@@ -43,6 +43,8 @@ export interface StepRunnerDeps {
   registry: ToolRegistry;
   llm?: BaseChatModel;
   profileRegistry?: AgentProfileRegistry;
+  /** Shared context from the graph state (conversation history, prior step outputs). */
+  sharedContext?: Record<string, unknown>;
 }
 
 /**
@@ -90,12 +92,32 @@ export async function runPlannedStep(
     }
   }
 
+  const stepToolNames = stepTools.length > 0
+    ? stepTools
+    : deps.registry.list().map((t) => t.name);
+
+  const toolList = stepToolNames.length > 0
+    ? `Available tools: ${stepToolNames.join(", ")}.`
+    : "No tools available.";
+
+  const stepSystemPrompt =
+    `You are an AI agent executing one step of a larger plan.\n` +
+    `Step: ${node.description}\n` +
+    `${toolList}\n` +
+    `Instructions:\n` +
+    `- Use tools only as needed to complete the step.\n` +
+    `- Once you have enough information, respond with your final answer directly — do NOT call more tools.\n` +
+    `- Do NOT repeat a tool call if you already have a useful result from it.\n` +
+    `- Be concise.`;
+
   try {
     const result = await runSubagent(
       {
         name: `graph-step-${node.id}`,
-        tools: stepTools,
+        tools: stepToolNames,
         maxIterations: iterationBudget(node.estimatedComplexity),
+        systemPrompt: stepSystemPrompt,
+        sharedContext: deps.sharedContext,
       },
       node.description,
       deps.registry,

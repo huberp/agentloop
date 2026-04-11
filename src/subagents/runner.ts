@@ -108,7 +108,13 @@ export async function runSubagent(
     const toolCalls = response.tool_calls ?? [];
 
     logger.info(
-      { subagent: definition.name, iteration, llmDurationMs, toolCallCount: toolCalls.length },
+      {
+        subagent: definition.name,
+        iteration,
+        llmDurationMs,
+        toolCallCount: toolCalls.length,
+        toolCalls: toolCalls.map((c) => ({ name: c.name, args: c.args })),
+      },
       "Subagent loop iteration"
     );
 
@@ -116,6 +122,7 @@ export async function runSubagent(
       // Subagent finished — extract and return the final text response
       const output =
         typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+      logger.info({ subagent: definition.name, iteration, output }, "Subagent final response");
       return { name: definition.name, output, iterations: iteration, filesModified };
     }
 
@@ -143,10 +150,22 @@ export async function runSubagent(
 
       if (!selectedTool) {
         content = `Tool not found: ${call.name}`;
+        logger.warn({ subagent: definition.name, tool: call.name }, "Tool not found");
       } else {
+        const toolStart = Date.now();
         try {
           const rawOutput = await selectedTool.invoke(call.args);
           content = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
+          logger.info(
+            {
+              subagent: definition.name,
+              tool: call.name,
+              args: call.args,
+              durationMs: Date.now() - toolStart,
+              result: content.length > 500 ? content.slice(0, 500) + "…" : content,
+            },
+            "Tool executed"
+          );
 
           // Track file mutations for conflict detection in runParallel
           const toolDef = filteredRegistry.getDefinition(call.name);
@@ -155,6 +174,10 @@ export async function runSubagent(
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           content = `Tool error: ${msg}`;
+          logger.warn(
+            { subagent: definition.name, tool: call.name, args: call.args, error: msg },
+            "Tool execution error"
+          );
         }
       }
 

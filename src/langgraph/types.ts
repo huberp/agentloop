@@ -133,6 +133,12 @@ export type GraphState = {
   fatalError: string;
   /** Collected events for observability */
   events: GraphEvent[];
+  /**
+   * Shared context that flows through the whole graph.
+   * - conversationHistory: digest of previous turns from the main agent
+   * - stepOutputs: outputs from completed steps, keyed by node id
+   */
+  sharedContext: Record<string, unknown>;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -176,4 +182,6 @@ export interface GraphInvokeOptions {
   maxConcurrency?: number;
   networkConcurrency?: number;
   progress?: (evt: GraphEvent) => void;
+  /** Shared context to seed into the graph (e.g. conversation history from the main agent). */
+  sharedContext?: Record<string, unknown>;
 }

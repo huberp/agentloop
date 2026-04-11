@@ -187,15 +187,6 @@ MCP_SERVERS=[{"name":"my-server","transport":"stdio","command":"npx","args":["my
 
 ---
 
-## Coordinator
-
-| Variable | Default | Type | Description |
-|---|---|---|---|
-| `COORDINATOR_ENABLED` | `false` | bool | When `true`, automatically routes each request to the best-matching agent profile when no explicit profile is specified. Requires at least one agent profile to be loaded. |
-| `COORDINATOR_PLAN_THRESHOLD` | `1` | int | Number of plan steps above which `coordinatedExecute()` uses the plan + orchestrate path instead of a single `invoke()` call. |
-
----
-
 ## Logging
 
 | Variable | Default | Type | Description |

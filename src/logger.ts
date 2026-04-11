@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import pino from "pino";
 import { appConfig } from "./config";
 
@@ -46,6 +48,7 @@ function extractMessage(args: unknown[]): string {
 
 function buildDestination() {
   if (appConfig.logger.file) {
+    fs.mkdirSync(path.dirname(appConfig.logger.file), { recursive: true });
     // Append to the specified file; pino.destination is synchronous-safe for file paths.
     return pino.destination({ dest: appConfig.logger.file, append: true, sync: false });
   }

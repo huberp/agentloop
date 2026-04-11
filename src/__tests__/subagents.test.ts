@@ -8,7 +8,6 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 
 import { ToolRegistry } from "../tools/registry";
 import { runSubagent } from "../subagents/runner";
-import { SubagentManager } from "../subagents/manager";
 import type { SubagentDefinition } from "../subagents/types";
 
 // ---------------------------------------------------------------------------
@@ -165,11 +164,11 @@ describe("runSubagent", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// SubagentManager tests
-// ---------------------------------------------------------------------------
+// SubagentManager tests removed — SubagentManager was deleted when the old
+// sequential orchestration engine was replaced by LangGraph.
 
-describe("SubagentManager", () => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+describe.skip("SubagentManager", () => {
   it("(a) runs a single subagent to completion", async () => {
     const invoke = jest.fn().mockResolvedValue({ content: "result", tool_calls: [] });
     const registry = new ToolRegistry();

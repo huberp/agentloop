@@ -510,10 +510,16 @@ describe("start-oneshot: getActiveExecutor", () => {
   });
 
   it("returns agentExecutor when ORCHESTRATOR is 'default'", async () => {
-    const { getActiveExecutor, agentExecutor } = await import("../index");
-    // Default config is "default"
-    const executor = getActiveExecutor();
-    expect(executor.invoke).toBe(agentExecutor.invoke);
+    const config = await import("../config");
+    const original = config.appConfig.orchestrator;
+    (config.appConfig as any).orchestrator = "default";
+    try {
+      const { getActiveExecutor, agentExecutor } = await import("../index");
+      const executor = getActiveExecutor();
+      expect(executor.invoke).toBe(agentExecutor.invoke);
+    } finally {
+      (config.appConfig as any).orchestrator = original;
+    }
   });
 
   it("returns a graph executor adapter when ORCHESTRATOR is 'langgraph'", async () => {

@@ -23,6 +23,7 @@ import { ToolRegistry } from "../tools/registry";
 import { runSubagent } from "../subagents/runner";
 import type { AgentProfileRegistry } from "../agents/registry";
 import { validateBlocksPlan, compileBlocksPlanToDag } from "./compiler";
+import { buildRuntimeContextBody } from "../prompts/context";
 import {
   selectRunnable,
   getCancellableForRace,
@@ -73,6 +74,7 @@ const GraphAnnotation = Annotation.Root({
   done:               Annotation<boolean>(overwrite<boolean>()),
   fatalError:         Annotation<string>(overwrite<string>()),
   events:             Annotation<GraphEvent[]>(appendEvents()),
+  sharedContext:      Annotation<Record<string, unknown>>(overwrite<Record<string, unknown>>()),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -152,8 +154,16 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
   async function planNode(state: GraphState): Promise<Partial<GraphState>> {
     logger.info({ request: state.request }, "Graph: generating blocks plan");
     const availableTools = deps.registry.list().map((t) => t.name);
-    const task = `Task: ${state.request}\nAvailable tools: ${availableTools.join(", ") || "(none)"}`;
-
+    const parts: string[] = [
+      `Task: ${state.request}`,
+      `Available tools: ${availableTools.join(", ") || "(none)"}`,
+      buildRuntimeContextBody(),
+    ];
+    const convHistory = state.sharedContext.conversationHistory as string | undefined;
+    if (convHistory) {
+      parts.push(`Previous conversation context:\n${convHistory}`);
+    }
+    const task = parts.join("\n");
     const result = await runSubagent(
       { name: "graph-planner", systemPrompt: BLOCKS_PLANNER_SYSTEM, tools: [], maxIterations: 3 },
       task,
@@ -162,6 +172,30 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
     );
 
     const plan = parsePlanOutput(result.output);
+
+    // Build a compact, readable summary of the block tree
+    function summariseBlocks(blocks: BlocksPlan["blocks"], indent = 0): string[] {
+      const lines: string[] = [];
+      for (const b of blocks) {
+        const pad = "  ".repeat(indent);
+        if (b.type === "step") {
+          lines.push(`${pad}• [step] ${b.description} (${b.estimatedComplexity})`);
+        } else {
+          lines.push(`${pad}• [parallel/${b.join}]`);
+          for (const branch of b.branches) {
+            lines.push(`${pad}  branch "${branch.name}":`);
+            lines.push(...summariseBlocks(branch.blocks, indent + 2));
+          }
+        }
+      }
+      return lines;
+    }
+
+    logger.info(
+      { goal: plan.goal, blocks: summariseBlocks(plan.blocks) },
+      `Graph: blocks plan — goal: "${plan.goal}"`,
+    );
+
     const evt = makeEvent("plan_created", `Plan created with ${plan.blocks.length} top-level block(s)`);
     return { plan, events: emit(state, evt) };
   }
@@ -183,7 +217,15 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
       }
     }
 
-    logger.info({ nodeCount: Object.keys(compiled.nodes).length }, "Graph: plan compiled to DAG");
+    const dagSummary = Object.values(compiled.nodes).map((n) => ({
+      id: n.id,
+      description: n.description,
+      dependsOn: n.dependsOn,
+    }));
+    logger.info(
+      { nodeCount: dagSummary.length, dag: dagSummary },
+      "Graph: compiled DAG",
+    );
     return { compiledPlan: compiled, records, replanRequested: false, replanReason: "" };
   }
 
@@ -226,6 +268,7 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
           registry: deps.registry,
           llm: deps.llm,
           profileRegistry: deps.profileRegistry,
+          sharedContext: state.sharedContext,
         });
         return { nodeId, ...result };
       }),
@@ -260,7 +303,16 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
       }
     }
 
-    return { records: newRecords, replanRequested, replanReason, events: allEvents };
+    // Accumulate successful step outputs into sharedContext so later steps can reference them
+    const stepOutputs = { ...(state.sharedContext.stepOutputs as Record<string, string> ?? {}) };
+    for (const r of results) {
+      if (r.status === "success" && r.output) {
+        stepOutputs[r.nodeId] = r.output.slice(0, 500);
+      }
+    }
+    const updatedSharedContext = { ...state.sharedContext, stepOutputs };
+
+    return { records: newRecords, replanRequested, replanReason, events: allEvents, sharedContext: updatedSharedContext };
   }
 
   // --- handle_outcomes node ---
@@ -501,6 +553,7 @@ export async function invokeGraph(
     done: false,
     fatalError: "",
     events: [],
+    sharedContext: opts.sharedContext ?? {},
   };
 
   const threadId = `graph-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

@@ -15,9 +15,7 @@ graph TD
     Init -->|load| Agents[AgentProfileRegistry]
     Main -->|explicit profileName?| ProfileCheck{Profile<br>provided?}
     ProfileCheck -->|yes| Activate[activateProfile<br>src/agents/activator.ts]
-    ProfileCheck -->|no + COORDINATOR_ENABLED| Router[routeRequest<br>src/agents/coordinator.ts]
-    Router -->|auto-selected profile| Activate
-    Router -->|null| AgentLoop
+    ProfileCheck -->|no| AgentLoop
     Activate -->|AgentRuntimeConfig| AgentLoop
     Main -->|loop| AgentLoop[Agentic Loop]
     AgentLoop -->|invoke| LLM
@@ -88,16 +86,18 @@ sequenceDiagram
 | `src/mcp/client.ts` | `McpClient` — MCP SDK wrapper for stdio/SSE transports |
 | `src/mcp/bridge.ts` | `registerMcpTools()` — translates MCP tools into `ToolDefinition` entries |
 | `src/subagents/runner.ts` | `runSubagent()` — isolated agent loop for a single subagent |
-| `src/subagents/manager.ts` | `SubagentManager` — sequential and parallel subagent execution |
-| `src/subagents/planner.ts` | LLM-driven planner that produces a `Plan` from a goal description |
-| `src/orchestrator.ts` | `executePlan()` — plan execution with retry/skip/abort and checkpointing |
+| `src/langgraph/types.ts` | `BlocksPlan` v2.0 format, `CompiledPlan` DAG, `GraphState` |
+| `src/langgraph/compiler.ts` | Validates `BlocksPlan`, flattens to DAG, handles parallel fork/join |
+| `src/langgraph/scheduler.ts` | `selectRunnable()` — dependency-and-resource-aware step scheduling |
+| `src/langgraph/step-runner.ts` | Executes a single graph node via `runSubagent()` + `activateProfile()` |
+| `src/langgraph/graph.ts` | LangGraphJS `StateGraph` with plan → compile → select → execute → replan → finalize nodes |
+| `src/langgraph/index.ts` | `graphExecutor.invoke()` — public entry point for the LangGraph engine |
 | `src/prompts/system.ts` | `getSystemPrompt()` — assembles the runtime system prompt |
 | `src/prompts/registry.ts` | `PromptRegistry` — versioned prompt template storage |
 | `src/prompts/context.ts` | `getCachedPromptContext()` — TTL-cached runtime context injection |
 | `src/skills/registry.ts` | `SkillRegistry` — loads and exposes skill definitions |
 | `src/agents/registry.ts` | `AgentProfileRegistry` — loads agent profile JSON/YAML files |
 | `src/agents/activator.ts` | `activateProfile()` — applies a profile's overrides to runtime config |
-| `src/agents/coordinator.ts` | `routeRequest()` — LLM-driven profile auto-selection; `coordinatedExecute()` — unified routing + planning + execution entry point |
 | `src/workspace.ts` | `analyzeWorkspace()` — detects language, framework, and lifecycle commands |
 | `src/logger.ts` | Structured Pino logger; configured from `appConfig.logger` |
 | `src/errors.ts` | `ToolExecutionError`, `ToolBlockedError` typed error classes |
@@ -110,89 +110,51 @@ Subagents are isolated agent loops that run a focused task with a restricted too
 
 ```mermaid
 graph TD
-    Parent[Parent Agent Loop] -->|runSubagent| SubRunner[runSubagent<br>src/subagents/runner.ts]
-    Parent -->|runParallel| SubMgr[SubagentManager<br>src/subagents/manager.ts]
-    SubMgr -->|Promise.allSettled| S1[Subagent 1]
-    SubMgr -->|Promise.allSettled| S2[Subagent 2]
-    SubMgr -->|Promise.allSettled| SN[Subagent N]
-    SubMgr -->|conflict detection| ConflictInfo[ConflictInfo]
+    Parent[LangGraph Graph Node] -->|runSubagent| SubRunner[runSubagent<br>src/subagents/runner.ts]
     SubRunner -->|isolated loop| IsolatedLLM[LLM + filtered tools]
     IsolatedLLM -->|SubagentResult| Parent
-
-    style S1 fill:#e8f4f8
-    style S2 fill:#e8f4f8
-    style SN fill:#e8f4f8
 ```
 
-**Parallel execution conflict detection:** `SubagentManager.runParallel()` uses the optional `mutatesFile` hook on each `ToolDefinition` to track which files each subagent wrote to. Conflicts (same file modified by more than one subagent) are reported in `ParallelResult.conflicts`.
+`runSubagent()` is the shared primitive used by both the simple agentic loop and the LangGraph engine.
 
 ---
 
-## Plan Execution (Orchestrator)
+## LangGraph Engine
 
-The orchestrator executes a `Plan` — a sequence of `PlanStep` objects — produced by `Planner`. Each step runs as a subagent with an iteration budget derived from its `estimatedComplexity`.
+When `ORCHESTRATOR=langgraph` the LangGraph-based engine handles planning, parallel execution, and automatic replanning. It replaces the old sequential orchestrator.
 
 ```mermaid
 graph LR
-    Goal[Goal string] --> Planner[Planner<br>src/subagents/planner.ts]
-    Planner -->|Plan| Orchestrator[executePlan<br>src/orchestrator.ts]
-    Orchestrator --> Step1[Step 1<br>low → 3 iter]
-    Orchestrator --> Step2[Step 2<br>medium → 5 iter]
-    Orchestrator --> StepN[Step N<br>high → 10 iter]
-    Step1 -->|StepResult| Checkpoint[Checkpoint<br>save after each step]
-    Checkpoint -->|resume| Orchestrator
+    Goal[Goal string] --> PlanNode[plan node<br>LLM produces BlocksPlan v2.0]
+    PlanNode --> CompileNode[compile node<br>compiler.ts → CompiledPlan DAG]
+    CompileNode --> SelectNode[select node<br>scheduler.ts selectRunnable]
+    SelectNode --> ExecNode[execute node<br>step-runner.ts runPlannedStep]
+    ExecNode --> HandleNode{success?}
+    HandleNode -->|yes| SelectNode
+    HandleNode -->|all done| FinalNode[finalize]
+    HandleNode -->|failure| ReplanNode[replan node]
+    ReplanNode --> CompileNode
 ```
 
-Failure strategies per step: `retry` (default), `skip`, or `abort`.
+Key features: parallel branches with `join:all` / `join:any` semantics, resource-aware scheduling (file/network quotas), automatic replanning on failure, and per-step agent profile activation.
 
 ---
 
-## Agent Profiles & Coordinator
+## Agent Profiles
 
-Agent profiles restrict which tools the LLM can call, set a custom temperature and model, and activate skills. The coordinator adds automatic profile selection on top of explicit profile names.
-
-### Profile activation
+Agent profiles restrict which tools the LLM can call, set a custom temperature and model, and activate skills.
 
 ```mermaid
 graph TD
     Invoke["agentExecutor.invoke(input, profileName?)"] --> HasProfile{Explicit<br>profile name?}
     HasProfile -->|yes| Registry[AgentProfileRegistry.get]
-    HasProfile -->|no + COORDINATOR_ENABLED| Router[routeRequest<br>coordinator.ts]
-    Router -->|LLM routing subagent<br>returns JSON profile name| Registry
-    Router -->|null — no match| DefaultLoop[Default loop<br>no profile]
+    HasProfile -->|no| DefaultLoop[Default loop<br>no profile]
     Registry --> Activate[activateProfile<br>activator.ts]
     Activate --> SkillReg[activate skills<br>SkillRegistry]
     Activate --> FilterTools[filter tool list<br>by profile.tools & blockedTools]
     Activate --> AgentRuntimeConfig[AgentRuntimeConfig<br>model · temperature · maxIterations<br>activeSkills · activeTools · constraints]
     AgentRuntimeConfig --> BoundLLM[LLM bound with<br>filtered tools]
     BoundLLM --> AgentLoop[Agentic Loop]
-```
-
-### Coordinator flow (`coordinatedExecute`)
-
-`coordinatedExecute()` in `src/agents/coordinator.ts` is a higher-level entry point that combines routing, planning, and execution into one call. It is the basis for complex multi-step work where each plan step benefits from a specialised profile.
-
-```mermaid
-sequenceDiagram
-    participant Caller
-    participant Coord as coordinatedExecute
-    participant Router as routeRequest
-    participant Planner as generatePlan
-    participant Invoke as invoke (single-step)
-    participant Orch as executePlan (multi-step)
-
-    Caller->>Coord: coordinatedExecute(request, options)
-    Coord->>Router: routeRequest(request, profileRegistry)
-    Router-->>Coord: profile | null
-    Coord->>Planner: generatePlan(request, workspaceInfo, registry, profileRegistry)
-    Planner-->>Coord: Plan (steps with agentProfile annotations)
-    alt steps ≤ planThreshold
-        Coord->>Invoke: invoke(request, profile?.name)
-        Invoke-->>Caller: { output }
-    else steps > planThreshold
-        Coord->>Orch: executePlan(plan, registry, { profileRegistry })
-        Orch-->>Caller: ExecutionResult
-    end
 ```
 
 **Built-in profiles:**

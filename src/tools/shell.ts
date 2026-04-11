@@ -39,9 +39,9 @@ function isBlocked(command: string, blocklist: string[]): boolean {
 export const toolDefinition: ToolDefinition = {
   name: "shell",
   description:
-    "Execute a shell command via execFile (no shell injection risk). Returns stdout, stderr, and exit code as JSON. " +
-    "The command string is split by whitespace to derive the executable and its arguments; " +
-    "arguments that contain spaces are not supported through this field.",
+    "Execute a shell command and return stdout, stderr, and exit code as JSON. " +
+    "On Windows, commands run via PowerShell (powershell.exe -NoProfile -NonInteractive -Command) — use PowerShell syntax (e.g. Get-Date, Get-ChildItem). " +
+    "On Linux/macOS, the command string is split by whitespace and executed directly via execFile (no shell expansion; no arguments with spaces).",
   schema,
   permissions: "dangerous",
   execute: async ({
@@ -100,10 +100,11 @@ export const toolDefinition: ToolDefinition = {
     const effectiveTimeout = timeout ?? appConfig.toolTimeoutMs;
     const isWindows = process.platform === "win32";
 
-    // On Windows dispatch through cmd.exe so shell built-ins work.
+    // On Windows dispatch through PowerShell so cmdlets and modern syntax work.
+    // -NonInteractive prevents interactive prompts from hanging indefinitely.
     // On POSIX split by whitespace and pass directly to execFile (no shell spawned).
     const [executable, args]: [string, string[]] = isWindows
-      ? ["cmd.exe", ["/c", command.trim()]]
+      ? ["powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command.trim()]]
       : (() => { const [exe, ...rest] = command.trim().split(/\s+/); return [exe, rest]; })()
 
     return new Promise<string>((resolve) => {
