@@ -37,7 +37,7 @@
     "@langchain/mistralai": "^1.0.7",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@mozilla/readability": "^0.6.0",
-    "diff": "^8.0.4",
+    "diff": "^9.0.0",
     "dotenv": "^17.4.1",
     "duck-duck-scrape": "^2.2.7",
     "ink": "^7.0.0",
