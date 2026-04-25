@@ -116,7 +116,8 @@ const BLOCKS_PLANNER_SYSTEM =
   `- Set join to "any" when only the first successful branch matters.\n` +
   `- Mark resources: ["network"] for steps using web search/fetch.\n` +
   `- Mark resources: ["file:WRITE:<path>"] for steps writing to a specific file.\n` +
-  `- Produce at least one block.`;
+  `- Produce at least one block.\n` +
+  `- Include all concrete values (URLs, repository names, file paths, version numbers, package names) needed to execute the step directly in the step description itself.`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependencies injected when building the graph
@@ -288,6 +289,7 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
           llm: deps.llm,
           profileRegistry: deps.profileRegistry,
           sharedContext: state.sharedContext,
+          originalRequest: state.request,
         });
         return { nodeId, ...result };
       }),

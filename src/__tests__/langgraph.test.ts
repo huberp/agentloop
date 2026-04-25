@@ -22,9 +22,11 @@ import {
   isDeadlocked,
 } from "../langgraph/scheduler";
 import { buildGraphNodes, invokeGraph } from "../langgraph/graph";
+import { runPlannedStep } from "../langgraph/step-runner";
 import type {
   BlocksPlan,
   CompiledPlan,
+  CompiledPlanNode,
   NodeRecord,
   GraphState,
   GraphEvent,
@@ -727,4 +729,130 @@ describe("finalize node", () => {
     expect(result.output).toContain("failed");
     expect(result.output).toContain("Something broke");
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// (11) runPlannedStep — originalRequest grounding
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runPlannedStep — original request grounding", () => {
+  /** Minimal CompiledPlanNode for unit tests. */
+  function makeNode(overrides: Partial<CompiledPlanNode> = {}): CompiledPlanNode {
+    return {
+      id: "s1",
+      description: "Clone the repository locally",
+      dependsOn: [],
+      toolsNeeded: [],
+      estimatedComplexity: "low",
+      resources: [],
+      ...overrides,
+    };
+  }
+
+  it("includes originalRequest in the step system prompt when provided", async () => {
+    let capturedSystemPrompt = "";
+
+    const invoke = jest.fn().mockImplementation(() => {
+      return Promise.resolve({ content: "done", tool_calls: [] });
+    });
+    const bindTools = jest.fn().mockImplementation((_tools: unknown, opts?: { tool_choice?: string }) => {
+      // Capture the system prompt from whatever call is made
+      return {
+        invoke: jest.fn().mockImplementation((messages: unknown[]) => {
+          if (Array.isArray(messages)) {
+            const systemMsg = (messages as Array<{ _getType?: () => string; content?: string }>)
+              .find((m) => m._getType?.() === "system");
+            if (systemMsg?.content) capturedSystemPrompt = systemMsg.content as string;
+          }
+          return Promise.resolve({ content: "done", tool_calls: [] });
+        }),
+      };
+    });
+
+    const llm = { invoke, bindTools } as unknown as BaseChatModel;
+    const registry = new ToolRegistry();
+    const node = makeNode();
+
+    await runPlannedStep(node, {
+      registry,
+      llm,
+      originalRequest: "add Anthropic models to github repo huberp/agentloop",
+    });
+
+    // The system prompt passed to runSubagent must contain the original request
+    expect(capturedSystemPrompt).toContain("add Anthropic models to github repo huberp/agentloop");
+    expect(capturedSystemPrompt).toContain("Original user request (for context):");
+  });
+
+  it("omits the original-request line when originalRequest is not provided", async () => {
+    let capturedSystemPrompt = "";
+
+    const bindTools = jest.fn().mockImplementation(() => ({
+      invoke: jest.fn().mockImplementation((messages: unknown[]) => {
+        if (Array.isArray(messages)) {
+          const systemMsg = (messages as Array<{ _getType?: () => string; content?: string }>)
+            .find((m) => m._getType?.() === "system");
+          if (systemMsg?.content) capturedSystemPrompt = systemMsg.content as string;
+        }
+        return Promise.resolve({ content: "done", tool_calls: [] });
+      }),
+    }));
+
+    const llm = {
+      invoke: jest.fn().mockResolvedValue({ content: "done", tool_calls: [] }),
+      bindTools,
+    } as unknown as BaseChatModel;
+    const registry = new ToolRegistry();
+    const node = makeNode();
+
+    await runPlannedStep(node, { registry, llm });
+
+    expect(capturedSystemPrompt).not.toContain("Original user request (for context):");
+  });
+
+  it("propagates request from state.request via invokeGraph", async () => {
+    const capturedSystemPrompts: string[] = [];
+
+    const planJson = JSON.stringify({
+      version: "2.0",
+      goal: "clone test",
+      blocks: [
+        { type: "step", description: "Clone the forked repository locally to the workspace", toolsNeeded: [], estimatedComplexity: "low" },
+      ],
+    });
+    const workspaceCtxJson = JSON.stringify({
+      workspaceInfo: { language: "node", framework: "none", packageManager: "npm", hasTests: true, testCommand: "", lintCommand: "", buildCommand: "", entryPoints: [], gitInitialized: true },
+    });
+
+    // Capture all system prompts seen during execution
+    let callCount = 0;
+    const invoke = jest.fn().mockImplementation((messages: unknown[]) => {
+      callCount++;
+      if (Array.isArray(messages)) {
+        const systemMsg = (messages as Array<{ _getType?: () => string; content?: string }>)
+          .find((m) => m._getType?.() === "system");
+        if (systemMsg?.content) capturedSystemPrompts.push(systemMsg.content as string);
+      }
+      if (callCount === 1) return Promise.resolve({ content: workspaceCtxJson, tool_calls: [] });
+      if (callCount === 2) return Promise.resolve({ content: planJson, tool_calls: [] });
+      return Promise.resolve({ content: "cloned successfully", tool_calls: [] });
+    });
+    const llm = {
+      invoke,
+      bindTools: jest.fn().mockImplementation(() => ({ invoke })),
+    } as unknown as BaseChatModel;
+
+    const registry = new ToolRegistry();
+    await invokeGraph(
+      "add Anthropic models to github repo huberp/agentloop",
+      { registry, llm },
+    );
+
+    // At least one system prompt (from the step subagent) must contain the original request
+    const stepPrompts = capturedSystemPrompts.filter((p) =>
+      p.includes("executing one step of a larger plan"),
+    );
+    expect(stepPrompts.length).toBeGreaterThan(0);
+    expect(stepPrompts[0]).toContain("add Anthropic models to github repo huberp/agentloop");
+  }, 30000);
 });
