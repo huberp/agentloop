@@ -601,9 +601,12 @@ describe("invokeGraph — integration with mock LLM", () => {
         { type: "step", description: "do thing 2", toolsNeeded: [], estimatedComplexity: "low" },
       ],
     });
+    const workspaceCtxJson = JSON.stringify({
+      workspaceInfo: { language: "node", framework: "none", packageManager: "npm", hasTests: true, testCommand: "", lintCommand: "", buildCommand: "", entryPoints: [], gitInitialized: true },
+    });
 
-    // Mock: planner returns the plan, then each step returns "done"
-    const llm = makeMockLlm(planJson, "step 1 done", "step 2 done");
+    // Mock: explorer returns workspace context, planner returns the plan, then each step returns "done"
+    const llm = makeMockLlm(workspaceCtxJson, planJson, "step 1 done", "step 2 done");
     const registry = new ToolRegistry();
 
     const events: GraphEvent[] = [];
@@ -635,8 +638,12 @@ describe("invokeGraph — integration with mock LLM", () => {
         },
       ],
     });
+    const workspaceCtxJson = JSON.stringify({
+      workspaceInfo: { language: "node", framework: "none", packageManager: "npm", hasTests: true, testCommand: "", lintCommand: "", buildCommand: "", entryPoints: [], gitInitialized: true },
+    });
 
-    const llm = makeMockLlm(planJson, "fast wins!", "slow result");
+    // Explorer → workspace context; planner → plan; steps → results
+    const llm = makeMockLlm(workspaceCtxJson, planJson, "fast wins!", "slow result");
     const registry = new ToolRegistry();
 
     // maxConcurrency=1 forces sequential execution: first branch completes,
@@ -658,12 +665,19 @@ describe("invokeGraph — integration with mock LLM", () => {
         { type: "step", description: "will fail", toolsNeeded: [], estimatedComplexity: "low" },
       ],
     });
+    const workspaceCtxJson = JSON.stringify({
+      workspaceInfo: { language: "node", framework: "none", packageManager: "npm", hasTests: true, testCommand: "", lintCommand: "", buildCommand: "", entryPoints: [], gitInitialized: true },
+    });
 
-    // Planner returns the plan; step LLM throws
+    // Explorer returns workspace context (call 1); planner returns plan (call 2); step throws (call 3+)
     let callCount = 0;
     const invoke = jest.fn().mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
+        // Project-explorer call: return workspace context
+        return Promise.resolve({ content: workspaceCtxJson, tool_calls: [] });
+      }
+      if (callCount === 2) {
         // Planner call: return the plan
         return Promise.resolve({ content: planJson, tool_calls: [] });
       }

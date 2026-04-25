@@ -470,7 +470,7 @@ function createGraphExecutorAdapter() {
       const result = await graphExecutor.invoke(
         input,
         { sharedContext: conversationHistory ? { conversationHistory } : {} },
-        { registry: toolRegistry },
+        { registry: toolRegistry, profileRegistry: agentProfileRegistry },
       );
       await chatHistory.addMessage(new AIMessage(result.output));
       return { output: result.output };
@@ -482,7 +482,7 @@ function createGraphExecutorAdapter() {
       const result = await graphExecutor.invoke(
         input,
         { sharedContext: conversationHistory ? { conversationHistory } : {} },
-        { registry: toolRegistry },
+        { registry: toolRegistry, profileRegistry: agentProfileRegistry },
       );
       await chatHistory.addMessage(new AIMessage(result.output));
       yield result.output;
