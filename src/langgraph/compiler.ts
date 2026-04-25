@@ -192,6 +192,10 @@ function normaliseResources(resources?: string[]): string[] {
  * Mapping from package-manager command patterns to the manifest file they
  * implicitly write. Used by inferMissingResources to auto-add resource locks
  * when the planner omits them.
+ *
+ * All manifest names are stored lowercase because normaliseResources() lowercases
+ * every resource string before it reaches the scheduler, so the comparison must
+ * use the same casing (e.g. "cargo.toml", not "Cargo.toml").
  */
 const PKG_MANAGER_MANIFEST: Array<{ pattern: RegExp; manifest: string }> = [
   { pattern: /\bnpm\s+(install|i|ci|add)\b/i,   manifest: "package.json" },
@@ -200,8 +204,10 @@ const PKG_MANAGER_MANIFEST: Array<{ pattern: RegExp; manifest: string }> = [
   { pattern: /\bpip\s*3?\s+install\b/i,          manifest: "requirements.txt" },
   { pattern: /\bcargo\s+(build|add|install)\b/i, manifest: "cargo.toml" },
   { pattern: /\bgo\s+get\b/i,                    manifest: "go.mod" },
-  { pattern: /\bbundle\s+install\b/i,            manifest: "gemfile" },
-  { pattern: /\bgem\s+install\b/i,               manifest: "gemfile" },
+  // `bundle install` and `bundle add` both write Gemfile / Gemfile.lock.
+  // `gem install` only installs into the system gem path and does NOT modify
+  // Gemfile, so it is intentionally excluded.
+  { pattern: /\bbundle\s+(install|add)\b/i,      manifest: "gemfile" },
 ];
 
 /** Known manifest file names (lowercase). */
