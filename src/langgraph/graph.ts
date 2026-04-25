@@ -18,6 +18,7 @@
 import { Annotation, StateGraph, START, END, MemorySaver } from "@langchain/langgraph";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 
+import { appConfig } from "../config";
 import { logger } from "../logger";
 import { ToolRegistry } from "../tools/registry";
 import { runSubagent } from "../subagents/runner";
@@ -576,8 +577,10 @@ export async function invokeGraph(
   };
 
   const threadId = `graph-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const recursionLimit = opts.recursionLimit ?? appConfig.langgraphRecursionLimit;
   const result = await graph.invoke(initialState, {
     configurable: { thread_id: threadId },
+    recursionLimit,
   }) as GraphState;
 
   return {

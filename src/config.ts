@@ -193,6 +193,9 @@ export const appConfig = {
   // Orchestrator engine: "default" uses the existing agentExecutor; "langgraph" uses the
   // LangGraphJS-based graphExecutor with blocks-plan, fork/join, and replanning.
   orchestrator: (process.env.ORCHESTRATOR ?? "default").toLowerCase() as "default" | "langgraph",
+  // LangGraph recursion limit: maximum number of node transitions before aborting.
+  // Each execution-loop iteration traverses ~3 nodes; set this well above the expected step count.
+  langgraphRecursionLimit: parseInt(process.env.LANGGRAPH_RECURSION_LIMIT ?? "100", 10),
   // Observability & Tracing (Task 4.1)
   tracingEnabled: asBoolean(process.env.TRACING_ENABLED, false),
   // Directory where per-invocation trace JSON files are written
