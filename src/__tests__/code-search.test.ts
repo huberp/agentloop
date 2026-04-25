@@ -27,6 +27,8 @@ function parseResult(raw: string): { matches: Array<{ file: string; line: number
 // Lazy import so the workspace root is set before the module is loaded.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const codeSearch = () => require("../tools/code-search").toolDefinition;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const fileSearch = () => require("../tools/file-search").toolDefinition;
 
 // ---------------------------------------------------------------------------
 // Fixture files used across multiple test groups
@@ -382,5 +384,49 @@ describe("code-search — (h) path traversal rejection", () => {
         contextLines: 0,
       })
     ).rejects.toThrow(/outside the workspace root/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// file-search alias
+// ---------------------------------------------------------------------------
+
+describe("file-search — alias for code-search", () => {
+  let workspace: string;
+
+  beforeAll(async () => {
+    workspace = await makeTmpWorkspace();
+    await createFixture(workspace);
+  });
+
+  afterAll(() => cleanTmpWorkspace(workspace));
+
+  it('is registered under the name "file-search"', () => {
+    expect(fileSearch().name).toBe("file-search");
+  });
+
+  it("has the same permissions as code-search", () => {
+    expect(fileSearch().permissions).toBe(codeSearch().permissions);
+  });
+
+  it("performs a literal search identical to code-search", async () => {
+    const aliasRaw = await fileSearch().execute({
+      pattern: "sayHello",
+      mode: "literal",
+      path: ".",
+      maxResults: 50,
+      contextLines: 0,
+    });
+    const codeRaw = await codeSearch().execute({
+      pattern: "sayHello",
+      mode: "literal",
+      path: ".",
+      maxResults: 50,
+      contextLines: 0,
+    });
+    const aliasResult = parseResult(aliasRaw);
+    const codeResult = parseResult(codeRaw);
+    expect(aliasResult.matches).toEqual(codeResult.matches);
+    expect(aliasResult.truncated).toBe(codeResult.truncated);
   });
 });

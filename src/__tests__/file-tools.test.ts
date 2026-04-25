@@ -199,6 +199,25 @@ describe("file-edit — search-and-replace mode", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("not found");
   });
+
+  it("returns a structured error (not an exception) when the file does not exist", async () => {
+    const raw = await fileEdit().execute({
+      path: "ghost.txt",
+      search: "anything",
+      replace: "x",
+    });
+    const result = JSON.parse(raw);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("does not exist");
+    expect(result.error).toContain("file-write");
+  });
+
+  it("returns a structured error when search is empty string, suggesting file-write", async () => {
+    const raw = await fileEdit().execute({ path: "edit.txt", search: "", replace: "content" });
+    const result = JSON.parse(raw);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("file-write");
+  });
 });
 
 describe("file-edit — line-range replacement mode", () => {

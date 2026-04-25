@@ -39,15 +39,46 @@ export const toolDefinition: ToolDefinition = {
   }): Promise<string> => {
     const { path: filePath } = args;
     const resolved = resolveSafe(appConfig.workspaceRoot, filePath);
-    const original = await fs.readFile(resolved, "utf-8");
+
+    // Validate arguments before touching the filesystem so the LLM gets
+    // an actionable error message even when the file does not exist yet.
+    if (args.search !== undefined && args.replace !== undefined) {
+      if (!args.search) {
+        return JSON.stringify({
+          success: false,
+          error:
+            "Search string must not be empty. " +
+            "To create a new file use the file-write tool instead.",
+        });
+      }
+    } else if (
+      args.startLine === undefined ||
+      args.endLine === undefined ||
+      args.newContent === undefined
+    ) {
+      return JSON.stringify({
+        success: false,
+        error: "Provide either (search + replace) or (startLine + endLine + newContent)",
+      });
+    }
+
+    let original: string;
+    try {
+      original = await fs.readFile(resolved, "utf-8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return JSON.stringify({
+          success: false,
+          error: `File "${filePath}" does not exist. Use the file-write tool to create a new file.`,
+        });
+      }
+      throw err;
+    }
 
     let updated: string;
 
     if (args.search !== undefined && args.replace !== undefined) {
       // Mode A: replace the first occurrence of the search string.
-      if (!args.search) {
-        return JSON.stringify({ success: false, error: "Search string must not be empty" });
-      }
       if (!original.includes(args.search)) {
         return JSON.stringify({ success: false, error: `Search string not found in "${filePath}"` });
       }
