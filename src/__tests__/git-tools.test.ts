@@ -533,6 +533,22 @@ describe("git-checkout — create and switch (newBranch)", () => {
     const afterStatus = await git.status();
     expect(afterStatus.current).toBe("feat/new");
   });
+
+  it("creates a new branch from HEAD when 'branch' is omitted", async () => {
+    const git = simpleGit(repo);
+
+    const raw = await gitCheckout().execute({
+      newBranch: "feat/from-head",
+      cwd: repo,
+    });
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(true);
+    expect(result.branch).toBe("feat/from-head");
+
+    const afterStatus = await git.status();
+    expect(afterStatus.current).toBe("feat/from-head");
+  });
 });
 
 describe("git-checkout — outside a Git repository", () => {
