@@ -35,6 +35,20 @@ const REPLAN_MARKERS = [
   "REPLAN_REQUESTED",
 ];
 
+/**
+ * Markers that indicate the LLM could not complete the step (semantic failure).
+ * Checked case-insensitively against the full step output.
+ */
+export const STEP_FAILED_MARKERS = [
+  "I cannot",
+  "I am unable",
+  "I don't have the ability",
+  "I do not have the ability",
+  "cannot perform",
+  "unable to perform",
+  "not able to",
+];
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,6 +141,17 @@ export async function runPlannedStep(
       stepLlm,
     );
 
+    // Detect semantic failure — LLM explicitly declined or could not act
+    const stepFailed = detectStepFailure(result.output);
+    if (stepFailed.failed) {
+      logger.warn({ nodeId: node.id, reason: stepFailed.reason }, "Step semantically failed (LLM indicated inability)");
+      return {
+        status: "failed",
+        output: result.output,
+        error: stepFailed.reason ?? "LLM indicated it could not complete the step",
+      };
+    }
+
     // Detect replan request in the output
     const replanRequested = detectReplanRequest(result.output);
 
@@ -163,4 +188,30 @@ function detectReplanRequest(output: string): { requested: boolean; reason?: str
     }
   }
   return { requested: false };
+}
+
+/**
+ * Lowercase versions of STEP_FAILED_MARKERS, pre-computed once to avoid
+ * repeated `.toLowerCase()` calls in the hot path.
+ */
+const STEP_FAILED_MARKERS_LOWER = STEP_FAILED_MARKERS.map((m) => m.toLowerCase());
+
+/**
+ * Detect whether the LLM output semantically indicates an inability to complete
+ * the step (e.g. "I cannot fork…", "I am unable to…").
+ *
+ * Matching is case-insensitive so that natural variations are caught.
+ */
+function detectStepFailure(output: string): { failed: boolean; reason?: string } {
+  const lower = output.toLowerCase();
+  for (let i = 0; i < STEP_FAILED_MARKERS_LOWER.length; i++) {
+    const markerLower = STEP_FAILED_MARKERS_LOWER[i];
+    const idx = lower.indexOf(markerLower);
+    if (idx !== -1) {
+      // Extract a short context window around the marker for the error message
+      const snippet = output.slice(idx, idx + 200).trim();
+      return { failed: true, reason: snippet };
+    }
+  }
+  return { failed: false };
 }
