@@ -107,6 +107,12 @@ export function compileBlocksPlanToDag(plan: BlocksPlan): CompiledPlan {
       if (block.type === "step") {
         stepCounter++;
         const id = block.id ?? `${prefix}s${stepCounter}`;
+        const normResources = normaliseResources(block.resources);
+        const inferred = inferMissingResources(
+          block.description,
+          block.toolsNeeded ?? [],
+          normResources,
+        );
         nodes[id] = {
           id,
           description: block.description,
@@ -114,7 +120,7 @@ export function compileBlocksPlanToDag(plan: BlocksPlan): CompiledPlan {
           toolsNeeded: block.toolsNeeded ?? [],
           estimatedComplexity: block.estimatedComplexity ?? "medium",
           agentProfile: block.agentProfile ?? null,
-          resources: normaliseResources(block.resources),
+          resources: [...normResources, ...inferred],
         };
         currentDeps = [id];
       } else {
@@ -176,4 +182,207 @@ export function compileBlocksPlanToDag(plan: BlocksPlan): CompiledPlan {
 function normaliseResources(resources?: string[]): string[] {
   if (!resources) return [];
   return resources.map((r) => r.trim().toLowerCase()).filter(Boolean);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Resource inference
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Mapping from package-manager command patterns to the manifest file they
+ * implicitly write. Used by inferMissingResources to auto-add resource locks
+ * when the planner omits them.
+ */
+const PKG_MANAGER_MANIFEST: Array<{ pattern: RegExp; manifest: string }> = [
+  { pattern: /\bnpm\s+(install|i|ci|add)\b/i,   manifest: "package.json" },
+  { pattern: /\byarn(\s+(add|install|up))?\b/i,  manifest: "package.json" },
+  { pattern: /\bpnpm\s+(install|add|i)\b/i,      manifest: "package.json" },
+  { pattern: /\bpip\s*3?\s+install\b/i,          manifest: "requirements.txt" },
+  { pattern: /\bcargo\s+(build|add|install)\b/i, manifest: "cargo.toml" },
+  { pattern: /\bgo\s+get\b/i,                    manifest: "go.mod" },
+  { pattern: /\bbundle\s+install\b/i,            manifest: "gemfile" },
+  { pattern: /\bgem\s+install\b/i,               manifest: "gemfile" },
+];
+
+/** Known manifest file names (lowercase). */
+const KNOWN_MANIFEST_FILES = [
+  "package.json",
+  "requirements.txt",
+  "pyproject.toml",
+  "cargo.toml",
+  "go.mod",
+  "gemfile",
+];
+
+/**
+ * Infer additional `file:write:<manifest>` resource hints that the planner
+ * failed to declare, based on the step's description and toolsNeeded.
+ *
+ * Rules:
+ * 1. If the description contains a package-manager invocation (e.g. "npm install …"),
+ *    add the corresponding manifest as a file-write resource unless already present.
+ * 2. If toolsNeeded includes "file-edit" or "file-write" and the description
+ *    names a known manifest file, add that file as a file-write resource unless
+ *    already present.
+ *
+ * @param description        Step description string.
+ * @param toolsNeeded        Declared tools for the step.
+ * @param existingResources  Already-normalised resource hints for the step.
+ * @returns                  Additional resource strings to append (already normalised).
+ */
+export function inferMissingResources(
+  description: string,
+  toolsNeeded: string[],
+  existingResources: string[],
+): string[] {
+  const additional: string[] = [];
+
+  // Rule 1: package-manager command → auto-add manifest write lock
+  for (const { pattern, manifest } of PKG_MANAGER_MANIFEST) {
+    if (pattern.test(description)) {
+      const resource = `file:write:${manifest}`;
+      if (!existingResources.includes(resource) && !additional.includes(resource)) {
+        additional.push(resource);
+      }
+    }
+  }
+
+  // Rule 2: file-edit / file-write tool + manifest name mentioned in description
+  const usesFileEditTool = toolsNeeded.some(
+    (t) => t === "file-edit" || t === "file-write",
+  );
+  if (usesFileEditTool) {
+    const lowerDesc = description.toLowerCase();
+    for (const manifest of KNOWN_MANIFEST_FILES) {
+      if (lowerDesc.includes(manifest)) {
+        const resource = `file:write:${manifest}`;
+        if (!existingResources.includes(resource) && !additional.includes(resource)) {
+          additional.push(resource);
+        }
+      }
+    }
+  }
+
+  return additional;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Post-plan conflict detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Return true if the step description matches a known package-manager invocation. */
+function isPkgManagerStep(step: StepBlock): boolean {
+  return PKG_MANAGER_MANIFEST.some(({ pattern }) => pattern.test(step.description));
+}
+
+/** Return true if the step uses a file-editing tool. */
+function isFileEditStep(step: StepBlock): boolean {
+  return (step.toolsNeeded ?? []).some(
+    (t) => t === "file-edit" || t === "file-write",
+  );
+}
+
+/** Collect all StepBlocks recursively from a list of PlanBlocks. */
+function collectSteps(blocks: PlanBlock[]): StepBlock[] {
+  const result: StepBlock[] = [];
+  for (const block of blocks) {
+    if (block.type === "step") {
+      result.push(block);
+    } else {
+      for (const branch of (block as ParallelBlock).branches) {
+        result.push(...collectSteps(branch.blocks));
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Scan a BlocksPlan for parallel branches where one branch contains a
+ * package-manager step and another contains a file-edit step targeting the
+ * same manifest file — without a declared resource lock to serialise them.
+ *
+ * Returns a (possibly empty) list of human-readable conflict descriptions.
+ * An empty array means no conflicts were found.
+ */
+export function detectPkgManifestConflicts(plan: BlocksPlan): string[] {
+  const conflicts: string[] = [];
+
+  function checkBlocks(blocks: PlanBlock[]): void {
+    for (const block of blocks) {
+      if (block.type !== "parallel") continue;
+
+      // Collect steps per branch for this parallel group
+      const perBranch = block.branches.map((branch) => ({
+        name: branch.name,
+        steps: collectSteps(branch.blocks),
+      }));
+
+      // Check every pair of branches for a pkg-manager / file-edit conflict
+      for (let i = 0; i < perBranch.length; i++) {
+        for (let j = i + 1; j < perBranch.length; j++) {
+          const branchA = perBranch[i];
+          const branchB = perBranch[j];
+
+          for (const stepA of branchA.steps) {
+            for (const stepB of branchB.steps) {
+              const aPkg = isPkgManagerStep(stepA);
+              const bPkg = isPkgManagerStep(stepB);
+              const aEdit = isFileEditStep(stepA);
+              const bEdit = isFileEditStep(stepB);
+
+              // One side is a pkg-manager step, the other is a file-edit step
+              if (!((aPkg && bEdit) || (bPkg && aEdit))) continue;
+
+              const pkgStep = aPkg ? stepA : stepB;
+              const editStep = aPkg ? stepB : stepA;
+
+              // Determine the manifest the pkg-manager step touches
+              const inferredManifests = inferMissingResources(
+                pkgStep.description,
+                pkgStep.toolsNeeded ?? [],
+                normaliseResources(pkgStep.resources),
+              );
+              const pkgResources = [
+                ...normaliseResources(pkgStep.resources),
+                ...inferredManifests,
+              ];
+              const editResources = [
+                ...normaliseResources(editStep.resources),
+                ...inferMissingResources(
+                  editStep.description,
+                  editStep.toolsNeeded ?? [],
+                  normaliseResources(editStep.resources),
+                ),
+              ];
+
+              const pkgWrites = pkgResources.filter((r) => r.startsWith("file:write:"));
+              const editWrites = editResources.filter((r) => r.startsWith("file:write:"));
+
+              // Conflict when both declare overlapping write targets,
+              // or when either side has no declared write resources at all
+              const bothDeclared = pkgWrites.length > 0 && editWrites.length > 0;
+              const overlap = pkgWrites.some((p) => editWrites.includes(p));
+
+              if (!bothDeclared || overlap) {
+                conflicts.push(
+                  `Parallel branches "${branchA.name}" and "${branchB.name}": ` +
+                  `pkg-manager step "${pkgStep.description}" may conflict with ` +
+                  `file-edit step "${editStep.description}"`,
+                );
+              }
+            }
+          }
+        }
+      }
+
+      // Recurse into each branch
+      for (const branch of block.branches) {
+        checkBlocks(branch.blocks);
+      }
+    }
+  }
+
+  checkBlocks(plan.blocks);
+  return conflicts;
 }

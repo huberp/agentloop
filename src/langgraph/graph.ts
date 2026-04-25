@@ -23,7 +23,7 @@ import { ToolRegistry } from "../tools/registry";
 import { runSubagent } from "../subagents/runner";
 import type { AgentProfileRegistry } from "../agents/registry";
 import { exploreWorkspace } from "../agents/project-explorer";
-import { validateBlocksPlan, compileBlocksPlanToDag } from "./compiler";
+import { validateBlocksPlan, compileBlocksPlanToDag, detectPkgManifestConflicts } from "./compiler";
 import { buildRuntimeContextBody } from "../prompts/context";
 import {
   selectRunnable,
@@ -116,6 +116,8 @@ const BLOCKS_PLANNER_SYSTEM =
   `- Set join to "any" when only the first successful branch matters.\n` +
   `- Mark resources: ["network"] for steps using web search/fetch.\n` +
   `- Mark resources: ["file:WRITE:<path>"] for steps writing to a specific file.\n` +
+  `- Steps that run npm install, yarn, pnpm install, pip install, cargo build, go get, bundle install, gem install, or any other package-manager command MUST declare resources: ["file:WRITE:<manifest>"] where <manifest> is the manifest file they modify (e.g. "file:WRITE:package.json" for npm/yarn/pnpm, "file:WRITE:requirements.txt" for pip, "file:WRITE:Cargo.toml" for cargo, "file:WRITE:go.mod" for go). NEVER place such a step in the same parallel block as a step that edits the same manifest file — they must be sequential.\n` +
+  `- Steps using file-edit or file-write tools MUST declare resources: ["file:WRITE:<path>"] for every file they modify.\n` +
   `- Produce at least one block.\n` +
   `- Include all concrete values (URLs, repository names, file paths, version numbers, package names) needed to execute the step directly in the step description itself.`;
 
@@ -192,6 +194,18 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
     );
 
     const plan = parsePlanOutput(result.output);
+
+    // Post-plan safety check: warn when parallel branches contain a
+    // package-manager step and a file-edit step that share a manifest file
+    // without a declared resource lock.  The compiler will auto-add inferred
+    // locks for known patterns, but log the conflict so operators are aware.
+    const conflicts = detectPkgManifestConflicts(plan);
+    if (conflicts.length > 0) {
+      logger.warn(
+        { conflicts },
+        "Graph: plan contains package-manager/file-edit parallelism conflicts — resource locks will be inferred automatically",
+      );
+    }
 
     // Build a compact, readable summary of the block tree
     function summariseBlocks(blocks: BlocksPlan["blocks"], indent = 0): string[] {
