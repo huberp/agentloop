@@ -22,7 +22,7 @@ import {
   isDeadlocked,
 } from "../langgraph/scheduler";
 import { buildGraphNodes, invokeGraph } from "../langgraph/graph";
-import { runPlannedStep } from "../langgraph/step-runner";
+import { runPlannedStep, STEP_FAILED_MARKERS } from "../langgraph/step-runner";
 import type {
   BlocksPlan,
   CompiledPlan,
@@ -855,4 +855,82 @@ describe("runPlannedStep — original request grounding", () => {
     expect(stepPrompts.length).toBeGreaterThan(0);
     expect(stepPrompts[0]).toContain("add Anthropic models to github repo huberp/agentloop");
   }, 30000);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// (12) runPlannedStep — semantic step failure detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runPlannedStep — semantic failure detection", () => {
+  function makeNode(overrides: Partial<CompiledPlanNode> = {}): CompiledPlanNode {
+    return {
+      id: "s1",
+      description: "Fork the huberp/agentloop repository",
+      dependsOn: [],
+      toolsNeeded: [],
+      estimatedComplexity: "low",
+      resources: [],
+      ...overrides,
+    };
+  }
+
+  function makeLlmWithOutput(output: string) {
+    const invoke = jest.fn().mockResolvedValue({ content: output, tool_calls: [] });
+    return {
+      invoke,
+      bindTools: jest.fn().mockReturnValue({ invoke }),
+    } as unknown as BaseChatModel;
+  }
+
+  it("returns status=failed when output contains 'I cannot'", async () => {
+    const llm = makeLlmWithOutput(
+      "I cannot directly fork a repository or perform GitHub actions like forking. " +
+      "However, you can manually fork the repository by following these steps.",
+    );
+    const registry = new ToolRegistry();
+    const result = await runPlannedStep(makeNode(), { registry, llm });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("I cannot");
+    expect(result.output).toContain("I cannot");
+  });
+
+  it("returns status=failed when output contains 'I am unable'", async () => {
+    const llm = makeLlmWithOutput("I am unable to perform this action directly.");
+    const registry = new ToolRegistry();
+    const result = await runPlannedStep(makeNode(), { registry, llm });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("I am unable");
+  });
+
+  it("returns status=failed when output contains 'cannot perform'", async () => {
+    const llm = makeLlmWithOutput("This agent cannot perform external API calls.");
+    const registry = new ToolRegistry();
+    const result = await runPlannedStep(makeNode(), { registry, llm });
+
+    expect(result.status).toBe("failed");
+  });
+
+  it("returns status=failed case-insensitively (e.g. 'I CANNOT')", async () => {
+    const llm = makeLlmWithOutput("I CANNOT access external services.");
+    const registry = new ToolRegistry();
+    const result = await runPlannedStep(makeNode(), { registry, llm });
+
+    expect(result.status).toBe("failed");
+  });
+
+  it("returns status=success when output does not contain any failure marker", async () => {
+    const llm = makeLlmWithOutput("Repository cloned successfully.");
+    const registry = new ToolRegistry();
+    const result = await runPlannedStep(makeNode(), { registry, llm });
+
+    expect(result.status).toBe("success");
+    expect(result.output).toBe("Repository cloned successfully.");
+  });
+
+  it("exports STEP_FAILED_MARKERS as a non-empty array", () => {
+    expect(Array.isArray(STEP_FAILED_MARKERS)).toBe(true);
+    expect(STEP_FAILED_MARKERS.length).toBeGreaterThan(0);
+  });
 });
