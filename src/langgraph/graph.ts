@@ -22,6 +22,7 @@ import { logger } from "../logger";
 import { ToolRegistry } from "../tools/registry";
 import { runSubagent } from "../subagents/runner";
 import type { AgentProfileRegistry } from "../agents/registry";
+import { exploreWorkspace } from "../agents/project-explorer";
 import { validateBlocksPlan, compileBlocksPlanToDag } from "./compiler";
 import { buildRuntimeContextBody } from "../prompts/context";
 import {
@@ -154,11 +155,29 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
   async function planNode(state: GraphState): Promise<Partial<GraphState>> {
     logger.info({ request: state.request }, "Graph: generating blocks plan");
     const availableTools = deps.registry.list().map((t) => t.name);
+
+    // Explore the workspace so the planner knows what files/build-systems exist.
+    // This prevents the planner from hallucinating file paths that don't exist.
+    let workspaceCtxStr = "";
+    try {
+      const workspaceCtx = await exploreWorkspace({ registry: deps.registry, llm: deps.llm });
+      workspaceCtxStr = JSON.stringify(workspaceCtx, null, 2);
+      logger.info({ workspaceCtx }, "Graph: workspace exploration complete");
+    } catch (err) {
+      logger.warn(
+        { error: (err as Error).message },
+        "Graph: workspace exploration failed; proceeding without workspace context",
+      );
+    }
+
     const parts: string[] = [
       `Task: ${state.request}`,
       `Available tools: ${availableTools.join(", ") || "(none)"}`,
       buildRuntimeContextBody(),
     ];
+    if (workspaceCtxStr) {
+      parts.push(`Workspace context (use this to understand the actual repo structure before planning steps):\n${workspaceCtxStr}`);
+    }
     const convHistory = state.sharedContext.conversationHistory as string | undefined;
     if (convHistory) {
       parts.push(`Previous conversation context:\n${convHistory}`);
