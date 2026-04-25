@@ -544,13 +544,18 @@ describe("start-oneshot: getActiveExecutor", () => {
     const original = config.appConfig.orchestrator;
     (config.appConfig as any).orchestrator = "langgraph";
 
-    // Override mock LLM to return a valid blocks plan then a step response
+    // Override mock LLM to return workspace context (explorer), then a valid
+    // blocks plan (planner), then a step response.
+    const workspaceCtxJson = JSON.stringify({
+      workspaceInfo: { language: "node", framework: "none", packageManager: "npm", hasTests: true, testCommand: "", lintCommand: "", buildCommand: "", entryPoints: [], gitInitialized: true },
+    });
     const planJson = JSON.stringify({
       version: "2.0",
       goal: "say hello",
       blocks: [{ type: "step", description: "greet", toolsNeeded: [], estimatedComplexity: "low" }],
     });
     mockLlmInvoke
+      .mockResolvedValueOnce({ content: workspaceCtxJson, tool_calls: [] })
       .mockResolvedValueOnce({ content: planJson, tool_calls: [] })
       .mockResolvedValueOnce({ content: "Hello!", tool_calls: [] });
 
@@ -571,13 +576,18 @@ describe("start-oneshot: getActiveExecutor", () => {
     const original = config.appConfig.orchestrator;
     (config.appConfig as any).orchestrator = "langgraph";
 
-    // Override mock LLM to return a valid blocks plan then a step response
+    // Override mock LLM to return workspace context (explorer), then a valid
+    // blocks plan (planner), then a step response.
+    const workspaceCtxJson = JSON.stringify({
+      workspaceInfo: { language: "node", framework: "none", packageManager: "npm", hasTests: true, testCommand: "", lintCommand: "", buildCommand: "", entryPoints: [], gitInitialized: true },
+    });
     const planJson = JSON.stringify({
       version: "2.0",
       goal: "say hello",
       blocks: [{ type: "step", description: "greet", toolsNeeded: [], estimatedComplexity: "low" }],
     });
     mockLlmInvoke
+      .mockResolvedValueOnce({ content: workspaceCtxJson, tool_calls: [] })
       .mockResolvedValueOnce({ content: planJson, tool_calls: [] })
       .mockResolvedValueOnce({ content: "Hello!", tool_calls: [] });
 
