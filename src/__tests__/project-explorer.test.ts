@@ -222,6 +222,43 @@ describe("exploreWorkspace", () => {
     expect(context.workspaceInfo.language).toBe("unknown");
   });
 
+  it("system prompt instructs LLM to only read files seen in file-list output", async () => {
+    const explorerOutput = JSON.stringify({
+      workspaceInfo: {
+        language: "node",
+        framework: "none",
+        packageManager: "npm",
+        hasTests: false,
+        testCommand: "",
+        lintCommand: "",
+        buildCommand: "",
+        entryPoints: [],
+        gitInitialized: false,
+      },
+    });
+
+    let capturedMessages: unknown[] = [];
+    const invoke = jest.fn().mockImplementation(async (msgs: unknown[]) => {
+      capturedMessages = msgs;
+      return { content: explorerOutput, tool_calls: [] };
+    });
+
+    const mockLlm = {
+      bindTools: jest.fn().mockReturnValue({ invoke }),
+    } as unknown as BaseChatModel;
+
+    const registry = makeExplorerRegistry();
+    await exploreWorkspace({ registry, llm: mockLlm });
+
+    // The first message must be the system message containing the guard instruction
+    const systemMsg = capturedMessages[0] as { content: string };
+    expect(systemMsg.content).toContain("Do NOT attempt to read a file unless you saw it in the file-list output");
+
+    // The second message (human task) must also reinforce the constraint
+    const taskMsg = capturedMessages[1] as { content: string };
+    expect(taskMsg.content).toContain("do NOT read any file that was not listed");
+  });
+
   it("uses the file-list and file-read tools (registered by name) when exploring", async () => {
     const explorerOutput = JSON.stringify({
       workspaceInfo: {

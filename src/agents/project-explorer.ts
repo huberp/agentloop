@@ -31,10 +31,12 @@ const EXPLORER_SYSTEM_PROMPT =
   `using the available tools and produce a structured JSON description of the workspace.\n\n` +
   `Exploration steps (use the tools to gather information):\n` +
   `1. Call file-list with recursive=true to understand the top-level directory structure.\n` +
-  `2. Identify key project files (package.json, Cargo.toml, CMakeLists.txt, CMakePresets.json, ` +
-  `build.gradle, build.gradle.kts, pom.xml, go.mod, pyproject.toml, requirements.txt, Makefile, etc.).\n` +
-  `3. Call file-read on each identified key file to extract language, framework, build system, ` +
-  `package manager, and test setup information.\n` +
+  `2. Scan the file-list output to find which build-system configuration files are actually present ` +
+  `(e.g. package.json, Cargo.toml, CMakeLists.txt, CMakePresets.json, build.gradle, ` +
+  `build.gradle.kts, pom.xml, go.mod, pyproject.toml, requirements.txt, Makefile, etc.). ` +
+  `Do NOT attempt to read a file unless you saw it in the file-list output.\n` +
+  `3. Call file-read ONLY on the config files that appeared in the file-list result to extract ` +
+  `language, framework, build system, package manager, and test setup information.\n` +
   `4. A project may contain MORE THAN ONE build system — report all of them.\n\n` +
   `After exploration, respond ONLY with a valid JSON object matching this exact schema (no prose, ` +
   `no markdown fences):\n` +
@@ -107,7 +109,8 @@ export async function exploreWorkspace(options: ExploreWorkspaceOptions): Promis
     `Explore the project workspace using file-list and file-read.\n` +
     `Steps:\n` +
     `a) Call file-list (recursive=true) to see the full directory tree.\n` +
-    `b) Identify and read all key project manifest / configuration files.\n` +
+    `b) From the file-list output, identify which build-system configuration files are actually ` +
+    `present, then call file-read ONLY on those files — do NOT read any file that was not listed.\n` +
     `c) Identify all build systems present (there may be more than one).\n` +
     `Then produce the final JSON object as described in the system prompt.`;
 
