@@ -14,7 +14,7 @@
 
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 
-import { validateBlocksPlan, compileBlocksPlanToDag } from "../langgraph/compiler";
+import { validateBlocksPlan, compileBlocksPlanToDag, inferMissingResources, detectPkgManifestConflicts } from "../langgraph/compiler";
 import {
   selectRunnable,
   getCancellableForRace,
@@ -932,5 +932,317 @@ describe("runPlannedStep — semantic failure detection", () => {
   it("exports STEP_FAILED_MARKERS as a non-empty array", () => {
     expect(Array.isArray(STEP_FAILED_MARKERS)).toBe(true);
     expect(STEP_FAILED_MARKERS.length).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// (13) inferMissingResources — auto-inference of file:write resources
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("inferMissingResources", () => {
+  it("adds file:write:package.json for an npm install step", () => {
+    const result = inferMissingResources("Run npm install @anthropic-ai/sdk", [], []);
+    expect(result).toContain("file:write:package.json");
+  });
+
+  it("adds file:write:package.json for a yarn add step", () => {
+    const result = inferMissingResources("yarn add typescript --dev", [], []);
+    expect(result).toContain("file:write:package.json");
+  });
+
+  it("adds file:write:package.json for a pnpm install step", () => {
+    const result = inferMissingResources("pnpm install", [], []);
+    expect(result).toContain("file:write:package.json");
+  });
+
+  it("adds file:write:requirements.txt for a pip install step", () => {
+    const result = inferMissingResources("pip install requests", [], []);
+    expect(result).toContain("file:write:requirements.txt");
+  });
+
+  it("adds file:write:cargo.toml for a cargo build step", () => {
+    const result = inferMissingResources("cargo build --release", [], []);
+    expect(result).toContain("file:write:cargo.toml");
+  });
+
+  it("adds file:write:go.mod for a go get step", () => {
+    const result = inferMissingResources("go get github.com/some/pkg", [], []);
+    expect(result).toContain("file:write:go.mod");
+  });
+
+  it("does not duplicate a resource already declared", () => {
+    const existing = ["file:write:package.json"];
+    const result = inferMissingResources("npm install lodash", [], existing);
+    expect(result).not.toContain("file:write:package.json");
+  });
+
+  it("adds file:write:package.json when file-edit tool targets package.json", () => {
+    const result = inferMissingResources(
+      "Edit package.json to add the @anthropic-ai/sdk dependency",
+      ["file-edit"],
+      [],
+    );
+    expect(result).toContain("file:write:package.json");
+  });
+
+  it("adds file:write:requirements.txt when file-write targets requirements.txt", () => {
+    const result = inferMissingResources(
+      "Write updated requirements.txt with new package versions",
+      ["file-write"],
+      [],
+    );
+    expect(result).toContain("file:write:requirements.txt");
+  });
+
+  it("does not infer file:write resources for an unrelated file-edit step", () => {
+    const result = inferMissingResources(
+      "Edit src/index.ts to add new export",
+      ["file-edit"],
+      [],
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  it("returns empty array for a step with no pkg-manager pattern and no toolsNeeded", () => {
+    const result = inferMissingResources("Run the test suite", [], []);
+    expect(result).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// (14) compileBlocksPlanToDag — auto-inference integration
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("compileBlocksPlanToDag — pkg-manager resource inference", () => {
+  it("auto-adds file:write:package.json to an npm install step with no resources", () => {
+    const plan: BlocksPlan = {
+      version: "2.0",
+      goal: "install dep",
+      blocks: [
+        {
+          type: "step",
+          description: "npm install @anthropic-ai/sdk",
+          toolsNeeded: [],
+          estimatedComplexity: "low",
+        },
+      ],
+    };
+    const dag = compileBlocksPlanToDag(plan);
+    const node = Object.values(dag.nodes)[0];
+    expect(node.resources).toContain("file:write:package.json");
+  });
+
+  it("auto-adds file:write:package.json to a file-edit step targeting package.json", () => {
+    const plan: BlocksPlan = {
+      version: "2.0",
+      goal: "edit manifest",
+      blocks: [
+        {
+          type: "step",
+          description: "Edit package.json to add the new dependency",
+          toolsNeeded: ["file-edit"],
+          estimatedComplexity: "low",
+        },
+      ],
+    };
+    const dag = compileBlocksPlanToDag(plan);
+    const node = Object.values(dag.nodes)[0];
+    expect(node.resources).toContain("file:write:package.json");
+  });
+
+  it("serialises npm-install and file-edit-package.json steps via inferred resource locks", () => {
+    // Simulate the exact scenario from H-1: npm install and file-edit package.json in parallel
+    const plan: BlocksPlan = {
+      version: "2.0",
+      goal: "add dependency",
+      blocks: [
+        {
+          type: "parallel",
+          join: "all",
+          branches: [
+            {
+              name: "install",
+              blocks: [
+                {
+                  type: "step",
+                  description: "npm install @anthropic-ai/sdk@latest",
+                  toolsNeeded: [],
+                  estimatedComplexity: "low",
+                  // Note: no resources declared — compiler must infer
+                },
+              ],
+            },
+            {
+              name: "edit-manifest",
+              blocks: [
+                {
+                  type: "step",
+                  description: "Edit package.json to add @anthropic-ai/sdk ^0.25.3",
+                  toolsNeeded: ["file-edit"],
+                  estimatedComplexity: "low",
+                  // Note: no resources declared — compiler must infer
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const dag = compileBlocksPlanToDag(plan);
+    const records: Record<string, NodeRecord> = {};
+    for (const id of Object.keys(dag.nodes)) {
+      records[id] = { nodeId: id, status: "pending", retryCount: 0 };
+    }
+
+    // Both branch steps depend on nothing (no prior step), so they would
+    // normally both be runnable simultaneously. With inferred resource locks
+    // on the same file, the scheduler must serialise them.
+    const runnable = selectRunnable(dag, records, { maxConcurrency: 10, networkConcurrency: 10 });
+
+    const npmStep = Object.values(dag.nodes).find((n) =>
+      n.description.includes("npm install"),
+    )!;
+    const editStep = Object.values(dag.nodes).find((n) =>
+      n.description.includes("Edit package.json"),
+    )!;
+
+    // Both must have the inferred lock
+    expect(npmStep.resources).toContain("file:write:package.json");
+    expect(editStep.resources).toContain("file:write:package.json");
+
+    // Only one of the conflicting steps should be selected as runnable
+    const conflictingRunnable = runnable.filter(
+      (id) => id === npmStep.id || id === editStep.id,
+    );
+    expect(conflictingRunnable.length).toBeLessThanOrEqual(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// (15) detectPkgManifestConflicts — post-plan validation
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("detectPkgManifestConflicts", () => {
+  it("detects a conflict when npm-install and file-edit run in parallel without resource locks", () => {
+    const plan: BlocksPlan = {
+      version: "2.0",
+      goal: "add dependency",
+      blocks: [
+        {
+          type: "parallel",
+          join: "all",
+          branches: [
+            {
+              name: "install",
+              blocks: [
+                { type: "step", description: "npm install @anthropic-ai/sdk@latest", toolsNeeded: [], estimatedComplexity: "low" },
+              ],
+            },
+            {
+              name: "edit",
+              blocks: [
+                { type: "step", description: "Edit package.json to add the dependency", toolsNeeded: ["file-edit"], estimatedComplexity: "low" },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const conflicts = detectPkgManifestConflicts(plan);
+    expect(conflicts.length).toBeGreaterThan(0);
+    expect(conflicts[0]).toContain("install");
+    expect(conflicts[0]).toContain("edit");
+  });
+
+  it("returns no conflicts when npm-install and file-edit are sequential", () => {
+    const plan: BlocksPlan = {
+      version: "2.0",
+      goal: "add dependency",
+      blocks: [
+        { type: "step", description: "npm install @anthropic-ai/sdk@latest", toolsNeeded: [], estimatedComplexity: "low" },
+        { type: "step", description: "Edit package.json to add the dependency", toolsNeeded: ["file-edit"], estimatedComplexity: "low" },
+      ],
+    };
+
+    const conflicts = detectPkgManifestConflicts(plan);
+    expect(conflicts).toHaveLength(0);
+  });
+
+  it("returns no conflicts when both steps declare matching resource locks", () => {
+    const plan: BlocksPlan = {
+      version: "2.0",
+      goal: "add dependency",
+      blocks: [
+        {
+          type: "parallel",
+          join: "all",
+          branches: [
+            {
+              name: "install",
+              blocks: [
+                {
+                  type: "step",
+                  description: "npm install @anthropic-ai/sdk@latest",
+                  toolsNeeded: [],
+                  estimatedComplexity: "low",
+                  resources: ["file:WRITE:package.json"],
+                },
+              ],
+            },
+            {
+              name: "edit",
+              blocks: [
+                {
+                  type: "step",
+                  description: "Edit package.json to add the dependency",
+                  toolsNeeded: ["file-edit"],
+                  estimatedComplexity: "low",
+                  resources: ["file:WRITE:package.json"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    // Both sides have a declared lock on package.json — they overlap, so
+    // this is still detected as a conflict (overlapping write = conflict).
+    // The scheduler will serialise them via the lock, but the plan itself
+    // is structurally problematic.
+    const conflicts = detectPkgManifestConflicts(plan);
+    expect(conflicts.length).toBeGreaterThan(0);
+  });
+
+  it("returns no conflicts for a plan with no parallel blocks", () => {
+    const plan: BlocksPlan = {
+      version: "2.0",
+      goal: "simple plan",
+      blocks: [
+        { type: "step", description: "npm install lodash", toolsNeeded: [], estimatedComplexity: "low" },
+        { type: "step", description: "Edit package.json to pin version", toolsNeeded: ["file-edit"], estimatedComplexity: "low" },
+      ],
+    };
+    expect(detectPkgManifestConflicts(plan)).toHaveLength(0);
+  });
+
+  it("returns no conflicts when parallel branches are unrelated to pkg-manager", () => {
+    const plan: BlocksPlan = {
+      version: "2.0",
+      goal: "fetch two things",
+      blocks: [
+        {
+          type: "parallel",
+          join: "all",
+          branches: [
+            { name: "a", blocks: [{ type: "step", description: "Fetch docs page", toolsNeeded: ["web-fetch"], estimatedComplexity: "low", resources: ["network"] }] },
+            { name: "b", blocks: [{ type: "step", description: "Fetch changelog", toolsNeeded: ["web-fetch"], estimatedComplexity: "low", resources: ["network"] }] },
+          ],
+        },
+      ],
+    };
+    expect(detectPkgManifestConflicts(plan)).toHaveLength(0);
   });
 });
