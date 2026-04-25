@@ -45,6 +45,8 @@ export interface StepRunnerDeps {
   profileRegistry?: AgentProfileRegistry;
   /** Shared context from the graph state (conversation history, prior step outputs). */
   sharedContext?: Record<string, unknown>;
+  /** The original user request; injected into every step prompt to prevent hallucination. */
+  originalRequest?: string;
 }
 
 /**
@@ -102,6 +104,7 @@ export async function runPlannedStep(
 
   const stepSystemPrompt =
     `You are an AI agent executing one step of a larger plan.\n` +
+    (deps.originalRequest ? `Original user request (for context): ${deps.originalRequest}\n` : ``) +
     `Step: ${node.description}\n` +
     `${toolList}\n` +
     `Instructions:\n` +
