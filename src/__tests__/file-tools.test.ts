@@ -35,6 +35,8 @@ const fileEdit = () => require("../tools/file-edit").toolDefinition;
 const fileDelete = () => require("../tools/file-delete").toolDefinition;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const fileList = () => require("../tools/file-list").toolDefinition;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const directoryScan = () => require("../tools/directory-scan").toolDefinition;
 
 // ---------------------------------------------------------------------------
 // file-read
@@ -377,6 +379,93 @@ describe("file-list — listing directories", () => {
 
   it("rejects paths outside the workspace root", async () => {
     await expect(fileList().execute({ path: "../../" })).rejects.toThrow(
+      /outside the workspace root/
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// directory-scan
+// ---------------------------------------------------------------------------
+
+describe("directory-scan — metadata", () => {
+  it("has the correct name and permission level", () => {
+    expect(directoryScan().name).toBe("directory-scan");
+    expect(directoryScan().permissions).toBe("safe");
+  });
+});
+
+describe("directory-scan — scanning directories", () => {
+  let workspace: string;
+
+  beforeAll(async () => {
+    workspace = await makeTmpWorkspace();
+    // Create a small fixture tree:
+    //   workspace/
+    //     a.ts
+    //     b.js
+    //     sub/
+    //       c.ts
+    await fs.writeFile(path.join(workspace, "a.ts"), "");
+    await fs.writeFile(path.join(workspace, "b.js"), "");
+    await fs.mkdir(path.join(workspace, "sub"));
+    await fs.writeFile(path.join(workspace, "sub", "c.ts"), "");
+  });
+
+  afterAll(() => cleanTmpWorkspace(workspace));
+
+  it("lists all entries in the workspace root (non-recursive)", async () => {
+    const raw = await directoryScan().execute({ path: "." });
+    const { entries } = JSON.parse(raw);
+
+    const names: string[] = entries.map((e: { name: string }) => e.name);
+    expect(names).toContain("a.ts");
+    expect(names).toContain("b.js");
+    expect(names).toContain("sub");
+  });
+
+  it("returns type 'f' for files and 'd' for directories", async () => {
+    const raw = await directoryScan().execute({ path: "." });
+    const { entries } = JSON.parse(raw);
+
+    const sub = entries.find((e: { name: string }) => e.name === "sub");
+    const aTs = entries.find((e: { name: string }) => e.name === "a.ts");
+
+    expect(sub?.type).toBe("d");
+    expect(aTs?.type).toBe("f");
+  });
+
+  it("each entry includes a path field equal to name for non-recursive scan", async () => {
+    const raw = await directoryScan().execute({ path: "." });
+    const { entries } = JSON.parse(raw);
+
+    for (const entry of entries as Array<{ name: string; path: string }>) {
+      expect(entry.path).toBe(entry.name);
+    }
+  });
+
+  it("lists recursively and includes nested entries with relative paths", async () => {
+    const raw = await directoryScan().execute({ path: ".", recursive: true });
+    const { entries } = JSON.parse(raw);
+
+    const paths: string[] = entries.map((e: { path: string }) =>
+      e.path.replace(/\\/g, "/")
+    );
+    expect(paths).toContain("sub/c.ts");
+  });
+
+  it("recursive entries for nested files have type 'f'", async () => {
+    const raw = await directoryScan().execute({ path: ".", recursive: true });
+    const { entries } = JSON.parse(raw);
+
+    const nested = (entries as Array<{ path: string; type: string }>).find(
+      (e) => e.path.replace(/\\/g, "/") === "sub/c.ts"
+    );
+    expect(nested?.type).toBe("f");
+  });
+
+  it("rejects paths outside the workspace root", async () => {
+    await expect(directoryScan().execute({ path: "../../" })).rejects.toThrow(
       /outside the workspace root/
     );
   });

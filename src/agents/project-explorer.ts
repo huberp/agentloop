@@ -30,7 +30,8 @@ const EXPLORER_SYSTEM_PROMPT =
   `You are a workspace exploration agent. Your job is to analyze a software project's file system ` +
   `using the available tools and produce a structured JSON description of the workspace.\n\n` +
   `Exploration steps (use the tools to gather information):\n` +
-  `1. Call file-list with recursive=true to understand the top-level directory structure.\n` +
+  `1. Call directory-scan with recursive=true to understand the full directory structure and discover ` +
+  `which files and directories actually exist before reading any file.\n` +
   `2. Identify key project files (package.json, Cargo.toml, CMakeLists.txt, CMakePresets.json, ` +
   `build.gradle, build.gradle.kts, pom.xml, go.mod, pyproject.toml, requirements.txt, Makefile, etc.).\n` +
   `3. Call file-read on each identified key file to extract language, framework, build system, ` +
@@ -75,7 +76,7 @@ const EXPLORER_SYSTEM_PROMPT =
 
 /** Options for `exploreWorkspace()`. */
 export interface ExploreWorkspaceOptions {
-  /** Tool registry that must contain 'file-list' and 'file-read'. */
+  /** Tool registry that must contain 'directory-scan', 'file-list' and 'file-read'. */
   registry: ToolRegistry;
   /** Optional LLM — created from config when omitted. */
   llm?: BaseChatModel;
@@ -89,12 +90,12 @@ export interface ExploreWorkspaceOptions {
 /**
  * Run the ProjectExplorer agent to produce a rich `WorkspaceContext`.
  *
- * The agent uses `file-list` and `file-read` tools to examine the workspace
+ * The agent uses `directory-scan`, `file-list` and `file-read` tools to examine the workspace
  * and derives build system information through LLM reasoning — no hardcoded
  * commands are baked in.  The resulting `WorkspaceContext` can be passed
  * directly to `generatePlan()`.
  *
- * If `file-list` or `file-read` are not registered in `registry`, the explorer
+ * If `directory-scan`, `file-list` or `file-read` are not registered in `registry`, the explorer
  * still runs but the LLM has no tool access; it will produce a best-effort
  * context based on its own knowledge.
  *
@@ -104,9 +105,9 @@ export async function exploreWorkspace(options: ExploreWorkspaceOptions): Promis
   const { registry, llm, maxIterations = 10 } = options;
 
   const task =
-    `Explore the project workspace using file-list and file-read.\n` +
+    `Explore the project workspace using directory-scan, file-list and file-read.\n` +
     `Steps:\n` +
-    `a) Call file-list (recursive=true) to see the full directory tree.\n` +
+    `a) Call directory-scan (recursive=true) to see the full directory tree and know which files exist.\n` +
     `b) Identify and read all key project manifest / configuration files.\n` +
     `c) Identify all build systems present (there may be more than one).\n` +
     `Then produce the final JSON object as described in the system prompt.`;
@@ -115,7 +116,7 @@ export async function exploreWorkspace(options: ExploreWorkspaceOptions): Promis
     {
       name: "project-explorer",
       systemPrompt: EXPLORER_SYSTEM_PROMPT,
-      tools: ["file-list", "file-read"],
+      tools: ["directory-scan", "file-list", "file-read"],
       maxIterations,
     },
     task,

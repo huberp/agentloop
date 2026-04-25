@@ -20,9 +20,15 @@ function makeMockLlm(invokeFn: jest.Mock): BaseChatModel {
   } as unknown as BaseChatModel;
 }
 
-/** Minimal registry with file-list and file-read stubs for unit tests. */
+/** Minimal registry with directory-scan, file-list and file-read stubs for unit tests. */
 function makeExplorerRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
+  registry.register({
+    name: "directory-scan",
+    description: "Scan directory contents",
+    schema: z.object({ path: z.string().optional(), recursive: z.boolean().optional() }),
+    execute: async () => JSON.stringify({ entries: [] }),
+  });
   registry.register({
     name: "file-list",
     description: "List directory contents",
@@ -248,10 +254,11 @@ describe("exploreWorkspace", () => {
     const registry = makeExplorerRegistry();
     await exploreWorkspace({ registry, llm: mockLlm });
 
-    // The LLM should have been bound with the file-list and file-read tools
+    // The LLM should have been bound with the directory-scan, file-list and file-read tools
     expect(mockLlm.bindTools).toHaveBeenCalledTimes(1);
     const boundTools = (mockLlm.bindTools as jest.Mock).mock.calls[0][0] as Array<{ name: string }>;
     const toolNames = boundTools.map((t) => t.name);
+    expect(toolNames).toContain("directory-scan");
     expect(toolNames).toContain("file-list");
     expect(toolNames).toContain("file-read");
   });
