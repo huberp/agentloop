@@ -1,8 +1,12 @@
 "use strict";
 // CJS shim for @asamuzakjp/css-color (ESM-only in npm package).
-// jsdom@29 imports this module for CSS colour resolution.  The agent-loop
+// jsdom@29 imports this module for CSS color resolution.  The agent-loop
 // tests do not exercise CSS rendering, so stub implementations that pass
 // through / return safe defaults are sufficient.
+//
+// NOTE: This shim returns pass-through values only. Full CSS color parsing
+// is not implemented; tests that require accurate color computation should
+// not rely on this shim.
 
 /**
  * Resolve a CSS colour value to a canonical form.

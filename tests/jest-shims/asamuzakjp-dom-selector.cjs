@@ -1,9 +1,16 @@
 "use strict";
 // CJS shim for @asamuzakjp/dom-selector (ESM-only in npm package).
 // jsdom@29 uses DOMSelector for querySelector/querySelectorAll/matches/closest.
-// The agent-loop tests do not depend on full CSS selector engine behaviour;
+// The agent-loop tests do not depend on full CSS selector engine behavior;
 // a basic structural implementation that handles simple tag/class/id selectors
 // is sufficient.
+//
+// LIMITATIONS (by design — this is a test shim only):
+// - Only simple selectors are supported (tag, #id, .class combinations).
+// - Compound/descendant/sibling/pseudo selectors are NOT supported.
+// - CSS identifiers are matched against [a-zA-Z0-9_-] only; Unicode and
+//   escaped characters in selectors are not handled.
+// - JSDOM NodeList impls do not support [i] indexing; item(i) is used instead.
 
 // ---------------------------------------------------------------------------
 // Minimal CSS selector helpers (no full CSS parser needed for tests)
