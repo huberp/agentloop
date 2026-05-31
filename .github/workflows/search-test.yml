@@ -57,14 +57,23 @@ jobs:
                 .filter(Boolean)
                 .reverse();
               let parsed;
+              let parseErrorMessage = "";
               for (const line of candidates) {
+                const isJsonCandidate = line.startsWith("[") || line.startsWith("{");
+                if (!isJsonCandidate) {
+                  continue;
+                }
                 try {
                   parsed = JSON.parse(line);
                   break;
-                } catch {}
+                } catch (error) {
+                  parseErrorMessage ||= error instanceof Error ? error.message : String(error);
+                }
               }
               if (parsed === undefined) {
-                console.error("Expected valid JSON output from websearch.");
+                console.error(
+                  `Expected valid JSON output from websearch.${parseErrorMessage ? ` Last parse error: ${parseErrorMessage}` : ""}`
+                );
                 process.exit(1);
               }
               if (!Array.isArray(parsed)) {
