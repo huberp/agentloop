@@ -16,7 +16,7 @@
  */
 
 import { parseArgs } from "util";
-import { appConfig, stripApiKeyArg } from "./config";
+import { setLoggerDestination, stripApiKeyArg } from "./config";
 
 // ---------------------------------------------------------------------------
 // Help text
@@ -543,7 +543,7 @@ async function main(): Promise<void> {
   // Ensure JSON-mode stdout remains parseable (e.g., for jq) by routing logger
   // output to stderr before any module that initializes the logger is imported.
   if (shouldUseStderrLoggerForJson(subcommand, rest)) {
-    appConfig.logger.destination = "stderr";
+    setLoggerDestination("stderr");
   }
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {

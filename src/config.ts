@@ -225,6 +225,17 @@ export function applyApiKeyOverride(apiKey: string): void {
 }
 
 /**
+ * Override the logger destination at runtime.
+ *
+ * Keeps `process.env` and the live `appConfig` object in sync so code that reads
+ * either source observes the same destination.
+ */
+export function setLoggerDestination(destination: "stdout" | "stderr"): void {
+  process.env.LOG_DESTINATION = destination;
+  appConfig.logger.destination = destination;
+}
+
+/**
  * Remove `--api-key <value>` from `args` and return the cleaned array.
  *
  * Call this in entry points that use `parseArgs({ strict: true })` so the
