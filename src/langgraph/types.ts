@@ -184,4 +184,6 @@ export interface GraphInvokeOptions {
   progress?: (evt: GraphEvent) => void;
   /** Shared context to seed into the graph (e.g. conversation history from the main agent). */
   sharedContext?: Record<string, unknown>;
+  /** Maximum number of LangGraph steps before aborting (default: 100). */
+  recursionLimit?: number;
 }
