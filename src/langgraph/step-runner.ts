@@ -141,6 +141,16 @@ export async function runPlannedStep(
       stepLlm,
     );
 
+    // Detect tool-level failures surfaced by the subagent runner
+    if (result.failed) {
+      logger.warn({ nodeId: node.id, error: result.error }, "Step failed due to tool execution failure");
+      return {
+        status: "failed",
+        output: result.output,
+        error: result.error ?? "Step failed due to tool execution failure",
+      };
+    }
+
     // Detect semantic failure — LLM explicitly declined or could not act
     const stepFailed = detectStepFailure(result.output);
     if (stepFailed.failed) {

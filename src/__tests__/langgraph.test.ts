@@ -13,6 +13,7 @@
  */
 
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { z } from "zod";
 
 import { validateBlocksPlan, compileBlocksPlanToDag, inferMissingResources, detectPkgManifestConflicts } from "../langgraph/compiler";
 import {
@@ -927,6 +928,34 @@ describe("runPlannedStep — semantic failure detection", () => {
 
     expect(result.status).toBe("success");
     expect(result.output).toBe("Repository cloned successfully.");
+  });
+
+  it("returns status=failed when a tool returns success:false", async () => {
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({
+        content: "",
+        tool_calls: [{ id: "c1", name: "git-commit", args: {} }],
+      })
+      .mockResolvedValueOnce({ content: "unexpected success", tool_calls: [] });
+    const llm = {
+      invoke,
+      bindTools: jest.fn().mockReturnValue({ invoke }),
+    } as unknown as BaseChatModel;
+
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "git-commit",
+      description: "mock commit",
+      schema: z.object({}),
+      execute: async () => JSON.stringify({ success: false, error: "Author identity unknown" }),
+    });
+
+    const result = await runPlannedStep(makeNode({ toolsNeeded: ["git-commit"] }), { registry, llm });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("git-commit");
+    expect(result.error).toContain("Author identity unknown");
   });
 
   it("exports STEP_FAILED_MARKERS as a non-empty array", () => {

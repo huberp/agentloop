@@ -162,6 +162,47 @@ describe("runSubagent", () => {
     const messagesArg: Array<{ content: string }> = invoke.mock.calls[0][0];
     expect(messagesArg[0].content).toBe("You are a custom bot.");
   });
+
+  it("fails when a tool returns success:false", async () => {
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({
+        content: "",
+        tool_calls: [{ id: "c1", name: "git-commit", args: {} }],
+      })
+      .mockResolvedValueOnce({ content: "should not be reached", tool_calls: [] });
+
+    const registry = new ToolRegistry();
+    addTool(registry, "git-commit", JSON.stringify({ success: false, error: "Author identity unknown" }));
+
+    const def: SubagentDefinition = { name: "git-agent", tools: ["git-commit"], maxIterations: 5 };
+    const result = await runSubagent(def, "commit changes", registry, makeMockLlm(invoke));
+
+    expect(result.failed).toBe(true);
+    expect(result.error).toContain("git-commit");
+    expect(result.error).toContain("Author identity unknown");
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails when a tool returns a non-zero exitCode", async () => {
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({
+        content: "",
+        tool_calls: [{ id: "c1", name: "shell", args: {} }],
+      })
+      .mockResolvedValueOnce({ content: "should not be reached", tool_calls: [] });
+
+    const registry = new ToolRegistry();
+    addTool(registry, "shell", JSON.stringify({ stdout: "", stderr: "permission denied", exitCode: 1 }));
+
+    const def: SubagentDefinition = { name: "shell-agent", tools: ["shell"], maxIterations: 5 };
+    const result = await runSubagent(def, "push branch", registry, makeMockLlm(invoke));
+
+    expect(result.failed).toBe(true);
+    expect(result.error).toContain("non-zero exit code 1");
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
 });
 
 // SubagentManager tests removed — SubagentManager was deleted when the old

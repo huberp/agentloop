@@ -27,6 +27,10 @@ export interface SubagentResult {
   iterations: number;
   /** File paths mutated (written/edited/deleted) during this run. */
   filesModified: string[];
+  /** Indicates the subagent failed due to a tool-level execution/result failure. */
+  failed?: boolean;
+  /** Human-readable error when `failed` is true. */
+  error?: string;
 }
 
 // ---------------------------------------------------------------------------

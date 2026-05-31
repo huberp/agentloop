@@ -43,6 +43,51 @@ function buildDefaultSystemPrompt(
 }
 
 /**
+ * Detect whether a tool output indicates execution failure.
+ *
+ * Recognizes:
+ * - internal tool execution errors (prefixed "Tool error:")
+ * - structured `{ success: false }` payloads
+ * - structured non-zero `{ exitCode }` / `{ exit_code }` payloads
+ */
+function detectToolFailure(output: string): string | undefined {
+  const trimmed = output.trim();
+
+  if (trimmed.startsWith("Tool error:")) {
+    return trimmed;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return undefined;
+  }
+
+  const record = parsed as Record<string, unknown>;
+
+  if (record.success === false) {
+    const reason = typeof record.error === "string" ? record.error : "Tool returned success:false";
+    return reason;
+  }
+
+  const exitCodeRaw = typeof record.exitCode === "number"
+    ? record.exitCode
+    : typeof record.exit_code === "number"
+    ? record.exit_code
+    : undefined;
+  if (typeof exitCodeRaw === "number" && exitCodeRaw !== 0) {
+    return `Tool returned non-zero exit code ${exitCodeRaw}`;
+  }
+
+  return undefined;
+}
+
+/**
  * Run a subagent: an isolated agent loop with its own message history,
  * filtered tool set, and iteration budget.
  *
@@ -183,6 +228,23 @@ export async function runSubagent(
             "Tool execution error"
           );
         }
+      }
+
+      const toolFailure = detectToolFailure(content);
+      if (toolFailure) {
+        const failureMessage = `Tool ${call.name} failed: ${toolFailure}`;
+        logger.warn(
+          { subagent: definition.name, tool: call.name, reason: toolFailure },
+          "Tool failure detected; failing subagent step"
+        );
+        return {
+          name: definition.name,
+          output: content,
+          iterations: iteration,
+          filesModified,
+          failed: true,
+          error: failureMessage,
+        };
       }
 
       await chatHistory.addMessage(
