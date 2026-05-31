@@ -73,7 +73,14 @@
       "json"
     ],
     "transform": {
-      "^.+\\.ts$": "ts-jest"
+      "^.+\\.[tj]s$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "allowJs": true
+          }
+        }
+      ]
     },
     "testMatch": [
       "**/__tests__/**/*.test.ts"
@@ -83,8 +90,10 @@
       "^uuid$": "<rootDir>/node_modules/uuid/dist/index.js",
       "^@exodus/bytes/(.*)$": "<rootDir>/tests/jest-shims/exodus-bytes-encoding.cjs",
       "^@asamuzakjp/css-color$": "<rootDir>/tests/jest-shims/asamuzakjp-css-color.cjs",
-      "^@asamuzakjp/dom-selector$": "<rootDir>/tests/jest-shims/asamuzakjp-dom-selector.cjs",
-      "^parse5$": "<rootDir>/node_modules/parse5/dist/cjs/index.js"
-    }
+      "^@asamuzakjp/dom-selector$": "<rootDir>/tests/jest-shims/asamuzakjp-dom-selector.cjs"
+    },
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(parse5|entities)/)"
+    ]
   }
 }
