@@ -31,7 +31,7 @@ const schema = z.object({
         "Inferred from file extension when omitted."
     ),
   cwd: z.string().optional().describe("Working directory (defaults to process.cwd())"),
-  env: z.record(z.string()).optional().describe("Extra environment variables merged into the process environment"),
+  env: z.record(z.string(), z.string()).optional().describe("Extra environment variables merged into the process environment"),
   timeout: z
     .number()
     .optional()

@@ -6,6 +6,7 @@ import { logger } from "../logger";
 import { appConfig } from "../config";
 import { createLLM } from "../llm";
 import { ToolRegistry } from "../tools/registry";
+import { prepareToolArgs, validatePreparedToolArgs } from "../tools/arg-repair";
 import type { SubagentDefinition, SubagentResult } from "./types";
 
 /**
@@ -154,13 +155,17 @@ export async function runSubagent(
       } else {
         const toolStart = Date.now();
         try {
-          const rawOutput = await selectedTool.invoke(call.args);
+          const toolDef = filteredRegistry.getDefinition(call.name);
+          const preparedArgs = prepareToolArgs(call.name, call.args);
+          validatePreparedToolArgs(toolDef, preparedArgs, call.args);
+
+          const rawOutput = await selectedTool.invoke(preparedArgs);
           content = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
           logger.info(
             {
               subagent: definition.name,
               tool: call.name,
-              args: call.args,
+              args: preparedArgs,
               durationMs: Date.now() - toolStart,
               result: content.length > 500 ? content.slice(0, 500) + "…" : content,
             },
@@ -168,8 +173,7 @@ export async function runSubagent(
           );
 
           // Track file mutations for conflict detection in runParallel
-          const toolDef = filteredRegistry.getDefinition(call.name);
-          const mutatedFile = toolDef?.mutatesFile?.(call.args as Record<string, unknown>);
+          const mutatedFile = toolDef?.mutatesFile?.(preparedArgs as Record<string, unknown>);
           if (mutatedFile) filesModified.push(mutatedFile);
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);

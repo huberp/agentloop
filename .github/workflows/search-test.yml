@@ -1,0 +1,65 @@
+name: Search Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  websearch-smoke:
+    name: Web Search Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run websearch examples
+        env:
+          WEB_SEARCH_PROVIDER: duckduckgo
+          DUCKDUCKGO_MIN_DELAY_MS: 0
+        run: |
+          set -euo pipefail
+
+          run_query() {
+            local query="$1"
+            echo "Running query: $query"
+            local output
+            output="$(npm run oneshot -- websearch --json -q "$query")"
+            echo "$output" | node -e '
+              const fs = require("fs");
+              const raw = fs.readFileSync(0, "utf8").trim();
+              let parsed;
+              try {
+                parsed = JSON.parse(raw);
+              } catch {
+                console.error("Expected valid JSON output from websearch.");
+                process.exit(1);
+              }
+              if (!Array.isArray(parsed)) {
+                console.error("Expected JSON array of search results.", parsed);
+                process.exit(1);
+              }
+              if (parsed.length === 0) {
+                console.error("Expected at least one search result.");
+                process.exit(1);
+              }
+              for (const item of parsed.slice(0, 3)) {
+                if (typeof item.title !== "string" || typeof item.link !== "string" || typeof item.snippet !== "string") {
+                  console.error("Malformed search result:", item);
+                  process.exit(1);
+                }
+              }
+            '
+          }
+
+          run_query "Anthropic docs model context protocol"
+          run_query "LangChain TypeScript agent loop example"
+          run_query "GitHub Actions setup-node cache npm"

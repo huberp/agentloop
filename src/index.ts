@@ -14,6 +14,7 @@ import { countTokens, trimMessages } from "./context";
 import { withRetry, invokeWithTimeout } from "./retry";
 import { ToolExecutionError, ToolBlockedError } from "./errors";
 import { ToolRegistry, toolRegistry } from "./tools/registry";
+import { prepareToolArgs, validatePreparedToolArgs } from "./tools/arg-repair";
 import { ToolPermissionManager, ConcurrencyLimiter } from "./security";
 import { getCachedPromptContext } from "./prompts/context";
 import { registerMcpTools } from "./mcp/bridge";
@@ -292,10 +293,13 @@ async function executeWithTools(input: string, profileName?: string, runOptions?
         toolError = content;
       } else {
         try {
-          // Enforce permission policy (blocklist / allowlist / dangerous-tool confirmation)
           const definition = toolRegistry.getDefinition(call.name);
+          const preparedArgs = prepareToolArgs(call.name, call.args);
+          validatePreparedToolArgs(definition, preparedArgs, call.args);
+
+          // Enforce permission policy (blocklist / allowlist / dangerous-tool confirmation)
           if (definition) {
-            await permissionManager.checkPermission(definition, call.args);
+            await permissionManager.checkPermission(definition, preparedArgs);
           }
 
           // Enforce per-tool timeout and concurrency limit; on expiry ToolExecutionError is thrown
@@ -303,7 +307,7 @@ async function executeWithTools(input: string, profileName?: string, runOptions?
           const effectiveTimeout = definition?.timeout ?? appConfig.toolTimeoutMs;
           const rawOutput = await concurrencyLimiter.run(() =>
             invokeWithTimeout(
-              selectedTool.invoke(call.args),
+              selectedTool.invoke(preparedArgs),
               call.name,
               effectiveTimeout
             )

@@ -52,6 +52,42 @@ interface WebFetchError {
   url: string;
 }
 
+const LOW_CONTENT_PATTERNS = [
+  /^loading(?:\s|\.|…)*$/i,
+  /^please wait(?:\s|\.|…)*$/i,
+  /^just a moment(?:\s|\.|…)*$/i,
+  /^redirecting(?:\s|\.|…)*$/i,
+  /^enable javascript(?:\s|\.|…)*$/i,
+  /^javascript required(?:\s|\.|…)*$/i,
+  /^checking your browser(?:\s|\.|…)*$/i,
+];
+
+function normalizeContent(text: string): string {
+  return text
+    .replace(/\s+/g, " ")
+    .replace(/[_`~*#>[\]()]/g, " ")
+    .trim();
+}
+
+function isLowContentMarkdown(markdown: string): boolean {
+  const normalized = normalizeContent(markdown);
+  if (!normalized) return true;
+  if (normalized.length <= 80 && LOW_CONTENT_PATTERNS.some((p) => p.test(normalized))) return true;
+  return false;
+}
+
+function toAlternateUrl(url: string): string | null {
+  const parsed = new URL(url);
+  if (parsed.pathname.endsWith("/")) {
+    const next = parsed.pathname.slice(0, -1);
+    parsed.pathname = next.length === 0 ? "/" : next;
+  } else {
+    parsed.pathname = `${parsed.pathname}/`;
+  }
+  const alt = parsed.toString();
+  return alt === url ? null : alt;
+}
+
 export const toolDefinition: ToolDefinition = {
   name: "web_fetch",
   description:
@@ -107,12 +143,51 @@ export const toolDefinition: ToolDefinition = {
     }
 
     // 4. Extract content
-    const extracted = extractMode === "readability" ? extractReadable(html, cleanUrl) : null;
-    const contentHtml = extracted?.content ?? extractBodyHtml(html);
-    const title = extracted?.title || extractTitle(html) || parsed.hostname;
+    let extracted = extractMode === "readability" ? extractReadable(html, cleanUrl) : null;
+    let contentHtml = extracted?.content ?? extractBodyHtml(html);
+    let title = extracted?.title || extractTitle(html) || parsed.hostname;
 
-    // 5. Convert to Markdown and truncate
-    const rawMarkdown = htmlToMarkdown(contentHtml);
+    // 5. Convert to Markdown and fallback on low-content placeholders
+    let rawMarkdown = htmlToMarkdown(contentHtml);
+    if (extractMode === "readability" && isLowContentMarkdown(rawMarkdown)) {
+      const rawFallback = htmlToMarkdown(extractBodyHtml(html));
+      if (!isLowContentMarkdown(rawFallback) || rawFallback.length > rawMarkdown.length) {
+        rawMarkdown = rawFallback;
+      }
+    }
+
+    if (isLowContentMarkdown(rawMarkdown)) {
+      const alternateUrl = toAlternateUrl(cleanUrl);
+      if (alternateUrl) {
+        try {
+          const altHtml = await fetchWithLimits(alternateUrl, {
+            timeoutMs: appConfig.webFetchTimeoutMs,
+            userAgent: appConfig.webUserAgent,
+            maxBytes: appConfig.webMaxResponseBytes,
+          });
+          const altExtracted = extractMode === "readability" ? extractReadable(altHtml, alternateUrl) : null;
+          const altBodyHtml = altExtracted?.content ?? extractBodyHtml(altHtml);
+          const altMarkdownPrimary = htmlToMarkdown(altBodyHtml);
+          const altMarkdownRaw = htmlToMarkdown(extractBodyHtml(altHtml));
+          const altMarkdown =
+            !isLowContentMarkdown(altMarkdownPrimary) || altMarkdownPrimary.length >= altMarkdownRaw.length
+              ? altMarkdownPrimary
+              : altMarkdownRaw;
+
+          if (!isLowContentMarkdown(altMarkdown) || altMarkdown.length > rawMarkdown.length) {
+            rawMarkdown = altMarkdown;
+            title = altExtracted?.title || extractTitle(altHtml) || title;
+            extracted = altExtracted;
+          }
+        } catch (err: any) {
+          logger.debug(
+            { tool: "web_fetch", url: cleanUrl, alternateUrl, error: err?.message ?? String(err) },
+            "web_fetch alternate URL retry failed"
+          );
+        }
+      }
+    }
+
     const { text: markdown, truncated } = truncateAtWordBoundary(rawMarkdown, appConfig.webMaxContentChars);
 
     const result: WebFetchResult = {

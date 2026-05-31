@@ -12,6 +12,7 @@ import { logger } from "./logger";
 import type { Tracer } from "./observability";
 import { newInvocationId } from "./observability";
 import { trimMessages } from "./context";
+import { prepareToolArgs, validatePreparedToolArgs } from "./tools/arg-repair";
 
 /** A partially-accumulated tool call built from streaming ToolCallChunks. */
 interface AccumulatedToolCall {
@@ -177,14 +178,16 @@ export async function* streamWithTools(
         } else {
           try {
             const definition = toolRegistry.getDefinition(call.name);
+            const preparedArgs = prepareToolArgs(call.name, call.args);
+            validatePreparedToolArgs(definition, preparedArgs, call.args);
             if (definition) {
-              await permissionManager.checkPermission(definition, call.args);
+              await permissionManager.checkPermission(definition, preparedArgs);
             }
             const rawOutput = await (concurrencyLimiter
               ? concurrencyLimiter.run(() =>
-                  invokeWithTimeout(selectedTool.invoke(call.args), call.name, toolTimeoutMs)
+                  invokeWithTimeout(selectedTool.invoke(preparedArgs), call.name, toolTimeoutMs)
                 )
-              : invokeWithTimeout(selectedTool.invoke(call.args), call.name, toolTimeoutMs));
+              : invokeWithTimeout(selectedTool.invoke(preparedArgs), call.name, toolTimeoutMs));
             content = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput);
             logger.info(
               { toolName: call.name, toolCallId: call.id, response: content },

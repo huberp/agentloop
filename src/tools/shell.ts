@@ -19,7 +19,7 @@ const DEFAULT_COMMAND_BLOCKLIST = [
 const schema = z.object({
   command: z.string().describe("Shell command to execute (split by whitespace; no shell expansion)"),
   cwd: z.string().optional().describe("Working directory (defaults to process.cwd())"),
-  env: z.record(z.string()).optional().describe("Extra environment variables merged into the process environment"),
+  env: z.record(z.string(), z.string()).optional().describe("Extra environment variables merged into the process environment"),
   timeout: z.number().optional().describe("Timeout in milliseconds (overrides TOOL_TIMEOUT_MS)"),
 });
 
