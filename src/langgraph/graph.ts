@@ -594,7 +594,7 @@ export async function invokeGraph(
   const threadId = `graph-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const result = await graph.invoke(initialState, {
     configurable: { thread_id: threadId },
-    recursionLimit: 100,
+    recursionLimit: opts.recursionLimit ?? 100,
   }) as GraphState;
 
   return {
