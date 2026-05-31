@@ -39,6 +39,13 @@ export interface SandboxOptions {
   image?: string;
 }
 
+/** Normalize captured process output to a primitive UTF-8 string. */
+function normalizeOutput(output: unknown): string {
+  if (typeof output === "string") return output;
+  if (Buffer.isBuffer(output)) return output.toString("utf8");
+  return String(output ?? "");
+}
+
 /**
  * Map a host absolute path to its equivalent path inside the container.
  *
@@ -109,7 +116,11 @@ export async function runInDocker(options: SandboxOptions): Promise<SandboxResul
         return;
       }
       const exitCode = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
-      resolve({ stdout, stderr, exitCode });
+      resolve({
+        stdout: normalizeOutput(stdout),
+        stderr: normalizeOutput(stderr),
+        exitCode,
+      });
     });
   });
 }
