@@ -221,6 +221,22 @@ describe("web_fetch tool — full pipeline (mocked fetch)", () => {
     expect(result.title).toBe("Docs Ready");
     expect(result.markdown as string).toContain("Real documentation content is available.");
   });
+
+  it("keeps initial result when alternate URL retry fails", async () => {
+    const loadingHtml = `<html><head><title>Docs</title></head><body><main>Loading...</main></body></html>`;
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(makeHtmlResponse(loadingHtml))
+      .mockRejectedValueOnce(new Error("temporary upstream failure"));
+
+    const raw = await toolDefinition.execute({ url: "https://example.com/docs" });
+    const result = parseResult(raw);
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe("https://example.com/docs/");
+    expect(result.title).toBe("Docs");
+    expect(result.markdown as string).toContain("Loading");
+  });
 });
 
 describe("web_fetch tool — security blocks (return error JSON, never throw)", () => {
