@@ -67,6 +67,25 @@ function mockFetchSuccess(html = SAMPLE_HTML) {
   });
 }
 
+function makeHtmlResponse(html: string) {
+  const headers = new Headers();
+  headers.set("content-type", "text/html; charset=utf-8");
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(html);
+  return {
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    headers,
+    body: new ReadableStream({
+      start(controller: ReadableStreamDefaultController<Uint8Array>) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    }),
+  };
+}
+
 function mockFetchError(message = "connection refused") {
   global.fetch = jest.fn().mockRejectedValue(new Error(message));
 }
@@ -183,6 +202,24 @@ describe("web_fetch tool — full pipeline (mocked fetch)", () => {
     expect(result.truncated).toBe(true);
     expect((result.markdown as string).length).toBeLessThan(200); // truncated + notice
     expect(result.markdown as string).toContain("[Content truncated at 100 characters]");
+  });
+
+  it("retries alternate URL when initial fetch returns low-content placeholder", async () => {
+    const loadingHtml = `<html><head><title>Docs</title></head><body><main>Loading...</main></body></html>`;
+    const contentHtml = `<html><head><title>Docs Ready</title></head><body><article><h1>Anthropic Docs</h1><p>Real documentation content is available.</p></article></body></html>`;
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(makeHtmlResponse(loadingHtml))
+      .mockResolvedValueOnce(makeHtmlResponse(contentHtml));
+
+    const raw = await toolDefinition.execute({ url: "https://example.com/docs" });
+    const result = parseResult(raw);
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe("https://example.com/docs");
+    expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe("https://example.com/docs/");
+    expect(result.title).toBe("Docs Ready");
+    expect(result.markdown as string).toContain("Real documentation content is available.");
   });
 });
 
