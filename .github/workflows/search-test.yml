@@ -23,8 +23,9 @@ jobs:
 
       - name: Run websearch examples
         env:
-          WEB_SEARCH_PROVIDER: duckduckgo
-          DUCKDUCKGO_MIN_DELAY_MS: 0
+          WEB_SEARCH_PROVIDER: tavily
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
         run: |
           set -euo pipefail
 
