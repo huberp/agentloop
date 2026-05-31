@@ -141,17 +141,20 @@ describe("sandbox/docker — runInDocker integration", () => {
 
 describe("code_run tool — SANDBOX_MODE=docker", () => {
   let originalSandboxMode: "none" | "docker";
+  let originalWorkspaceRoot: string;
   let tmpDir: string;
 
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "agentloop-sandbox-tool-test-"));
     originalSandboxMode = appConfig.sandboxMode;
+    originalWorkspaceRoot = appConfig.workspaceRoot;
     (appConfig as Record<string, unknown>).sandboxMode = "docker";
     (appConfig as Record<string, unknown>).workspaceRoot = tmpDir;
   });
 
   afterAll(async () => {
     (appConfig as Record<string, unknown>).sandboxMode = originalSandboxMode;
+    (appConfig as Record<string, unknown>).workspaceRoot = originalWorkspaceRoot;
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 

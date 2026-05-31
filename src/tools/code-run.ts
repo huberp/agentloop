@@ -45,6 +45,13 @@ interface CodeRunResult {
   exitCode: number;
 }
 
+/** Normalize captured process output to a primitive UTF-8 string. */
+function normalizeOutput(output: unknown): string {
+  if (typeof output === "string") return output;
+  if (Buffer.isBuffer(output)) return output.toString("utf8");
+  return String(output ?? "");
+}
+
 /** Map common file extensions to their default interpreter. */
 const EXTENSION_INTERPRETER: Record<string, string> = {
   ".js": "node",
@@ -78,7 +85,11 @@ function spawnCaptured(
         return;
       }
       const exitCode = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
-      resolve({ stdout, stderr, exitCode });
+      resolve({
+        stdout: normalizeOutput(stdout),
+        stderr: normalizeOutput(stderr),
+        exitCode,
+      });
     });
   });
 }
@@ -125,7 +136,13 @@ export const toolDefinition: ToolDefinition = {
     timeout?: number;
   }): Promise<string> => {
     const effectiveTimeout = timeout ?? appConfig.executionTimeoutMs;
-    const effectiveEnv: NodeJS.ProcessEnv = { ...process.env, ...env };
+    const effectiveEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...env,
+      FORCE_COLOR: "0",
+      NO_COLOR: "1",
+      NODE_DISABLE_COLORS: "1",
+    };
 
     // Confine working directory to workspace root (path traversal prevention)
     let effectiveCwd: string;

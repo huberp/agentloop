@@ -93,7 +93,7 @@
       "^@asamuzakjp/dom-selector$": "<rootDir>/tests/jest-shims/asamuzakjp-dom-selector.cjs"
     },
     "transformIgnorePatterns": [
-      "/node_modules/(?!(parse5|entities)/)"
+      "/node_modules/(?!(parse5|entities|@mistralai/mistralai)/)"
     ]
   }
 }
