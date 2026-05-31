@@ -37,6 +37,18 @@ describe("code_run tool — mode: command", () => {
     expect(result.exitCode).toBe(-1);
     expect(result.stderr).toContain("No command provided");
   });
+
+  it("suppresses inherited ANSI color output for deterministic results", async () => {
+    const raw = await toolDefinition.execute({
+      mode: "command",
+      command: "node -e console.log(42)",
+      env: { FORCE_COLOR: "1" },
+    });
+    const result = parseResult(raw);
+
+    expectTrimmedStdout(result);
+    expect(result.exitCode).toBe(0);
+  });
 });
 
 describe("code_run tool — mode: file", () => {
