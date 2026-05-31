@@ -47,15 +47,33 @@ jobs:
             local query="$1"
             echo "Running query: $query"
             local output
-            output="$(npm run oneshot -- websearch --json -q "$query")"
+            output="$(npm run --silent oneshot -- websearch --json -q "$query")"
             echo "$output" | node -e '
               const fs = require("fs");
               const raw = fs.readFileSync(0, "utf8").trim();
+              const candidates = raw
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .reverse();
               let parsed;
-              try {
-                parsed = JSON.parse(raw);
-              } catch {
-                console.error("Expected valid JSON output from websearch.");
+              let parseErrorMessage = "";
+              for (const line of candidates) {
+                const isJsonCandidate = line.startsWith("[") || line.startsWith("{");
+                if (!isJsonCandidate) {
+                  continue;
+                }
+                try {
+                  parsed = JSON.parse(line);
+                  break;
+                } catch (error) {
+                  parseErrorMessage ||= error instanceof Error ? error.message : String(error);
+                }
+              }
+              if (parsed === undefined) {
+                console.error(
+                  `Expected valid JSON output from websearch.${parseErrorMessage ? ` Last parse error: ${parseErrorMessage}` : ""}`
+                );
                 process.exit(1);
               }
               if (!Array.isArray(parsed)) {
