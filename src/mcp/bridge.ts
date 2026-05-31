@@ -26,7 +26,7 @@ function jsonSchemaPropertyToZod(propertySchema: object): z.ZodTypeAny {
     case "array":
       return z.array(z.unknown());
     case "object":
-      return z.record(z.unknown());
+      return z.record(z.string(), z.unknown());
     default:
       return z.unknown();
   }
@@ -223,4 +223,3 @@ export function setupMcpSampling(clients: McpClient[], handler: McpSamplingHandl
     logger.info({ server: client.serverName }, "Sampling handler registered on MCP client");
   }
 }
-
