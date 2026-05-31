@@ -16,7 +16,7 @@
  */
 
 import { parseArgs } from "util";
-import { stripApiKeyArg } from "./config";
+import { appConfig, stripApiKeyArg } from "./config";
 
 // ---------------------------------------------------------------------------
 // Help text
@@ -529,8 +529,18 @@ async function runList(args: string[]): Promise<void> {
 // Entry point
 // ---------------------------------------------------------------------------
 
+function shouldUseStderrLoggerForJson(subcommand: string | undefined, args: string[]): boolean {
+  if (!subcommand) return false;
+  if (!args.includes("--json")) return false;
+  return subcommand === "agent" || subcommand === "websearch" || subcommand === "web-fetch" || subcommand === "list";
+}
+
 async function main(): Promise<void> {
   const [, , subcommand, ...rest] = process.argv;
+
+  if (shouldUseStderrLoggerForJson(subcommand, rest)) {
+    appConfig.logger.destination = "stderr";
+  }
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     printHelp();
