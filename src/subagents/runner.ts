@@ -75,11 +75,12 @@ function detectToolFailure(output: string): string | undefined {
     return reason;
   }
 
-  const exitCodeRaw = typeof record.exitCode === "number"
-    ? record.exitCode
-    : typeof record.exit_code === "number"
-    ? record.exit_code
-    : undefined;
+  let exitCodeRaw: number | undefined;
+  if (typeof record.exitCode === "number") {
+    exitCodeRaw = record.exitCode;
+  } else if (typeof record.exit_code === "number") {
+    exitCodeRaw = record.exit_code;
+  }
   if (typeof exitCodeRaw === "number" && exitCodeRaw !== 0) {
     return `Tool returned non-zero exit code ${exitCodeRaw}`;
   }
