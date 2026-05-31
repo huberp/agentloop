@@ -16,7 +16,7 @@
  */
 
 import { parseArgs } from "util";
-import { stripApiKeyArg } from "./config";
+import { setLoggerDestination, stripApiKeyArg } from "./config";
 
 // ---------------------------------------------------------------------------
 // Help text
@@ -529,8 +529,22 @@ async function runList(args: string[]): Promise<void> {
 // Entry point
 // ---------------------------------------------------------------------------
 
+const JSON_OUTPUT_SUBCOMMANDS = new Set(["agent", "websearch", "web-fetch", "list"]);
+
+function shouldUseStderrLoggerForJson(subcommand: string | undefined, args: string[]): boolean {
+  if (!subcommand) return false;
+  if (!args.includes("--json")) return false;
+  return JSON_OUTPUT_SUBCOMMANDS.has(subcommand);
+}
+
 async function main(): Promise<void> {
   const [, , subcommand, ...rest] = process.argv;
+
+  // Ensure JSON-mode stdout remains parseable (e.g., for jq) by routing logger
+  // output to stderr before any module that initializes the logger is imported.
+  if (shouldUseStderrLoggerForJson(subcommand, rest)) {
+    setLoggerDestination("stderr");
+  }
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     printHelp();
