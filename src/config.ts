@@ -193,6 +193,9 @@ export const appConfig = {
   // Orchestrator engine: "default" uses the existing agentExecutor; "langgraph" uses the
   // LangGraphJS-based graphExecutor with blocks-plan, fork/join, and replanning.
   orchestrator: (process.env.ORCHESTRATOR ?? "default").toLowerCase() as "default" | "langgraph",
+  // Plan-only mode: when enabled, the LangGraph orchestrator generates and compiles
+  // a plan but does not execute any steps (no edits, tests, or commits).
+  planOnly: asBoolean(process.env.PLAN_ONLY, false),
   // Observability & Tracing (Task 4.1)
   tracingEnabled: asBoolean(process.env.TRACING_ENABLED, false),
   // Directory where per-invocation trace JSON files are written

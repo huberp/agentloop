@@ -139,6 +139,8 @@ export type GraphState = {
    * - stepOutputs: outputs from completed steps, keyed by node id
    */
   sharedContext: Record<string, unknown>;
+  /** When true, stop after compiling the plan without executing steps. */
+  planOnly: boolean;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,4 +188,11 @@ export interface GraphInvokeOptions {
   sharedContext?: Record<string, unknown>;
   /** Maximum number of LangGraph steps before aborting (default: 100). */
   recursionLimit?: number;
+  /**
+   * When true, the graph stops after generating and compiling the plan
+   * without executing any steps.  The compiled plan is returned in the
+   * output.  Use this when the user says "just plan" to prevent
+   * unintended edits, tests, or commits.
+   */
+  planOnly?: boolean;
 }

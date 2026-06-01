@@ -25,6 +25,7 @@ import type { AgentProfileRegistry } from "../agents/registry";
 import { exploreWorkspace } from "../agents/project-explorer";
 import { validateBlocksPlan, compileBlocksPlanToDag, detectPkgManifestConflicts } from "./compiler";
 import { buildRuntimeContextBody } from "../prompts/context";
+import { setSearchWorkspaceLanguage } from "../tools/search";
 import {
   selectRunnable,
   getCancellableForRace,
@@ -76,6 +77,7 @@ const GraphAnnotation = Annotation.Root({
   fatalError:         Annotation<string>(overwrite<string>()),
   events:             Annotation<GraphEvent[]>(appendEvents()),
   sharedContext:      Annotation<Record<string, unknown>>(overwrite<Record<string, unknown>>()),
+  planOnly:           Annotation<boolean>(overwrite<boolean>()),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,7 +121,8 @@ const BLOCKS_PLANNER_SYSTEM =
   `- Steps that run npm install, yarn, pnpm install, pip install, cargo build, go get, bundle install, gem install, or any other package-manager command MUST declare resources: ["file:WRITE:<manifest>"] where <manifest> is the manifest file they modify (e.g. "file:WRITE:package.json" for npm/yarn/pnpm, "file:WRITE:requirements.txt" for pip, "file:WRITE:Cargo.toml" for cargo, "file:WRITE:go.mod" for go). NEVER place such a step in the same parallel block as a step that edits the same manifest file — they must be sequential.\n` +
   `- Steps using file-edit or file-write tools MUST declare resources: ["file:WRITE:<path>"] for every file they modify.\n` +
   `- Produce at least one block.\n` +
-  `- Include all concrete values (URLs, repository names, file paths, version numbers, package names) needed to execute the step directly in the step description itself.`;
+  `- Include all concrete values (URLs, repository names, file paths, version numbers, package names) needed to execute the step directly in the step description itself.\n` +
+  `- All step descriptions MUST respect the detected workspace language. Recommend libraries, SDKs, commands, and patterns that belong to the workspace's language ecosystem. Do NOT suggest tools or setup from a different language unless the user explicitly asks for it.`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependencies injected when building the graph
@@ -162,9 +165,13 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
     // Explore the workspace so the planner knows what files/build-systems exist.
     // This prevents the planner from hallucinating file paths that don't exist.
     let workspaceCtxStr = "";
+    let detectedLanguage = "unknown";
     try {
       const workspaceCtx = await exploreWorkspace({ registry: deps.registry, llm: deps.llm });
       workspaceCtxStr = JSON.stringify(workspaceCtx, null, 2);
+      detectedLanguage = workspaceCtx.workspaceInfo?.language ?? "unknown";
+      // Configure search query shaping for the detected workspace language
+      setSearchWorkspaceLanguage(detectedLanguage);
       logger.info({ workspaceCtx }, "Graph: workspace exploration complete");
     } catch (err) {
       logger.warn(
@@ -230,8 +237,12 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
       `Graph: blocks plan — goal: "${plan.goal}"`,
     );
 
+    // Store detected workspace language in sharedContext so step runners can
+    // apply language guardrails without re-exploring.
+    const updatedSharedContext = { ...state.sharedContext, workspaceLanguage: detectedLanguage };
+
     const evt = makeEvent("plan_created", `Plan created with ${plan.blocks.length} top-level block(s)`);
-    return { plan, events: emit(state, evt) };
+    return { plan, events: emit(state, evt), sharedContext: updatedSharedContext };
   }
 
   // --- compile node ---
@@ -304,6 +315,7 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
           profileRegistry: deps.profileRegistry,
           sharedContext: state.sharedContext,
           originalRequest: state.request,
+          workspaceLanguage: state.sharedContext.workspaceLanguage as string | undefined,
         });
         return { nodeId, ...result };
       }),
@@ -480,6 +492,20 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
 
   // --- finalize node ---
   function finalizeNode(state: GraphState): Partial<GraphState> {
+    // Plan-only mode: output the compiled plan without execution results
+    if (state.planOnly && state.compiledPlan) {
+      const nodes = Object.values(state.compiledPlan.nodes);
+      const planLines = nodes.map((n) =>
+        `- ${n.id}: ${n.description} [${n.estimatedComplexity}] tools: ${n.toolsNeeded.join(", ") || "(none)"}` +
+        (n.dependsOn.length > 0 ? ` (depends on: ${n.dependsOn.join(", ")})` : ""),
+      );
+      const output = `Plan generated (plan-only mode — no steps were executed).\n\n` +
+        `Goal: ${state.plan?.goal ?? "(unknown)"}\n` +
+        `Steps (${nodes.length}):\n${planLines.join("\n")}`;
+      logger.info({ nodeCount: nodes.length }, "Graph: finalized (plan-only)");
+      return { output, done: true };
+    }
+
     const successes = Object.values(state.records).filter((r) => r.status === "success");
     const failures = Object.values(state.records).filter((r) => r.status === "failed");
 
@@ -535,7 +561,15 @@ export function buildGraph(deps: GraphDeps, opts?: GraphInvokeOptions) {
   // Edges
   builder.addEdge(START, "generate_plan");
   builder.addEdge("generate_plan", "compile");
-  builder.addEdge("compile", "select_runnable");
+
+  // Conditional routing after compile: in plan-only mode, skip execution
+  // entirely and jump straight to finalize so only the compiled plan is
+  // returned without running any steps (no edits, tests, or commits).
+  builder.addConditionalEdges("compile", (state: GraphState) => {
+    if (state.planOnly) return "finalize";
+    return "select_runnable";
+  });
+
   builder.addEdge("select_runnable", "execute_batch");
   builder.addEdge("execute_batch", "handle_outcomes");
 
@@ -589,6 +623,7 @@ export async function invokeGraph(
     fatalError: "",
     events: [],
     sharedContext: opts.sharedContext ?? {},
+    planOnly: opts.planOnly ?? false,
   };
 
   const threadId = `graph-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
