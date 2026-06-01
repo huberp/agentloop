@@ -118,9 +118,19 @@ export async function runPlannedStep(
     ? `Available tools: ${stepToolNames.join(", ")}.`
     : "No tools available.";
 
-  // Build language guardrail for step prompt
-  const langGuardrail = deps.workspaceLanguage && deps.workspaceLanguage !== "unknown"
-    ? `\n- This workspace uses ${deps.workspaceLanguage}. Recommend only ${deps.workspaceLanguage}-ecosystem libraries, SDKs, and commands unless the user explicitly requests another language.`
+  // Build language guardrail for step prompt, mapping language IDs to human-friendly labels
+  const langLabels: Record<string, string> = {
+    node: "TypeScript / JavaScript (Node.js)",
+    python: "Python",
+    go: "Go",
+    rust: "Rust",
+    cmake: "C / C++ (CMake)",
+    java: "Java",
+    kotlin: "Kotlin",
+  };
+  const langLabel = deps.workspaceLanguage ? (langLabels[deps.workspaceLanguage] ?? deps.workspaceLanguage) : undefined;
+  const langGuardrail = langLabel && deps.workspaceLanguage !== "unknown"
+    ? `\n- This workspace uses ${langLabel}. Recommend only ${langLabel}-ecosystem libraries, SDKs, and commands unless the user explicitly requests another language.`
     : "";
 
   const stepSystemPrompt =

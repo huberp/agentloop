@@ -562,7 +562,9 @@ export function buildGraph(deps: GraphDeps, opts?: GraphInvokeOptions) {
   builder.addEdge(START, "generate_plan");
   builder.addEdge("generate_plan", "compile");
 
-  // Conditional routing after compile: skip execution in plan-only mode
+  // Conditional routing after compile: in plan-only mode, skip execution
+  // entirely and jump straight to finalize so only the compiled plan is
+  // returned without running any steps (no edits, tests, or commits).
   builder.addConditionalEdges("compile", (state: GraphState) => {
     if (state.planOnly) return "finalize";
     return "select_runnable";
