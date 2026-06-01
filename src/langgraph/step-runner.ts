@@ -61,6 +61,8 @@ export interface StepRunnerDeps {
   sharedContext?: Record<string, unknown>;
   /** The original user request; injected into every step prompt to prevent hallucination. */
   originalRequest?: string;
+  /** Detected workspace language (e.g. "node", "python"); used to inject language guardrails. */
+  workspaceLanguage?: string;
 }
 
 /**
@@ -116,6 +118,11 @@ export async function runPlannedStep(
     ? `Available tools: ${stepToolNames.join(", ")}.`
     : "No tools available.";
 
+  // Build language guardrail for step prompt
+  const langGuardrail = deps.workspaceLanguage && deps.workspaceLanguage !== "unknown"
+    ? `\n- This workspace uses ${deps.workspaceLanguage}. Recommend only ${deps.workspaceLanguage}-ecosystem libraries, SDKs, and commands unless the user explicitly requests another language.`
+    : "";
+
   const stepSystemPrompt =
     `You are an AI agent executing one step of a larger plan.\n` +
     (deps.originalRequest ? `Original user request (for context): ${deps.originalRequest}\n` : ``) +
@@ -125,7 +132,9 @@ export async function runPlannedStep(
     `- Use tools only as needed to complete the step.\n` +
     `- Once you have enough information, respond with your final answer directly — do NOT call more tools.\n` +
     `- Do NOT repeat a tool call if you already have a useful result from it.\n` +
-    `- Be concise.`;
+    `- If you reference research findings, you MUST have called a search tool and received non-empty results. If no search was performed or results were empty, state "insufficient evidence" instead of claiming specific findings.\n` +
+    `- Be concise.` +
+    langGuardrail;
 
   try {
     const result = await runSubagent(

@@ -68,8 +68,19 @@ function buildRenderContext(context: SystemPromptContext): Record<string, string
   return { toolList, projectSection, workspaceSection, instructionsSection };
 }
 
+/** Map detected workspace language to human-friendly label for prompts. */
+const LANGUAGE_LABELS: Record<string, string> = {
+  node: "TypeScript / JavaScript (Node.js)",
+  python: "Python",
+  go: "Go",
+  rust: "Rust",
+  cmake: "C / C++ (CMake)",
+  java: "Java",
+  kotlin: "Kotlin",
+};
+
 /** Format a WorkspaceInfo object into a human-readable prompt section. */
-function buildWorkspaceSection(ws: WorkspaceInfo): string {
+export function buildWorkspaceSection(ws: WorkspaceInfo): string {
   const lines: string[] = ["\nWorkspace context:"];
   lines.push(`  Language: ${ws.language}`);
   if (ws.framework !== "none") lines.push(`  Framework: ${ws.framework}`);
@@ -79,6 +90,16 @@ function buildWorkspaceSection(ws: WorkspaceInfo): string {
   if (ws.buildCommand) lines.push(`  Build command: ${ws.buildCommand}`);
   if (ws.entryPoints.length > 0) lines.push(`  Entry points: ${ws.entryPoints.join(", ")}`);
   lines.push(`  Git initialized: ${ws.gitInitialized}`);
+
+  // Inject language guardrail when workspace language is known
+  if (ws.language && ws.language !== "unknown") {
+    const label = LANGUAGE_LABELS[ws.language] ?? ws.language;
+    lines.push("");
+    lines.push(`  IMPORTANT — Language guardrail:`);
+    lines.push(`  This workspace uses ${label} (package manager: ${ws.packageManager}).`);
+    lines.push(`  All SDK, library, and tooling recommendations MUST target ${label} unless the user explicitly requests a different language.`);
+    lines.push(`  Do NOT suggest libraries, setup steps, or commands from other language ecosystems unless the user asks for them.`);
+  }
   return lines.join("\n");
 }
 

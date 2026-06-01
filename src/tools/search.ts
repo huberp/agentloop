@@ -17,6 +17,90 @@ export interface SearchOutputItem {
 }
 
 // ---------------------------------------------------------------------------
+// Workspace-aware query shaping & result reranking
+// ---------------------------------------------------------------------------
+
+/**
+ * Map from workspace language identifier to search keywords that should be
+ * appended to queries and used for result scoring.  Each entry contains
+ * `boost` terms (added to the query) and `demote` terms (results matching
+ * these are scored lower).
+ */
+const LANGUAGE_SEARCH_HINTS: Record<string, { boost: string[]; demote: string[] }> = {
+  node:   { boost: ["TypeScript", "JavaScript", "Node.js", "npm"],   demote: ["pip", "PyPI", "CRAN", "cargo"] },
+  python: { boost: ["Python", "pip", "PyPI"],                         demote: ["npm", "yarn", "crate", "NuGet"] },
+  go:     { boost: ["Go", "Golang", "go module"],                     demote: ["npm", "pip", "cargo", "NuGet"] },
+  rust:   { boost: ["Rust", "crate", "cargo"],                        demote: ["npm", "pip", "NuGet", "Maven"] },
+  java:   { boost: ["Java", "Maven", "Gradle"],                       demote: ["npm", "pip", "cargo", "NuGet"] },
+  kotlin: { boost: ["Kotlin", "Gradle"],                              demote: ["npm", "pip", "cargo", "NuGet"] },
+  cmake:  { boost: ["C++", "CMake", "C"],                             demote: ["npm", "pip", "cargo", "NuGet"] },
+};
+
+/** The currently configured workspace language (set by the graph on startup). */
+let _workspaceLanguage: string | undefined;
+
+/**
+ * Set the workspace language used for search query shaping.
+ * Called by the graph orchestrator after workspace detection.
+ */
+export function setSearchWorkspaceLanguage(lang: string | undefined): void {
+  _workspaceLanguage = lang;
+}
+
+/** Get the currently configured workspace language (for testing). */
+export function getSearchWorkspaceLanguage(): string | undefined {
+  return _workspaceLanguage;
+}
+
+/**
+ * Append workspace-relevant keywords to a query when language is known.
+ * The original query is preserved; language hints are added with OR to broaden
+ * recall without narrowing intent.
+ */
+export function shapeQueryForWorkspace(query: string, language?: string): string {
+  const lang = language ?? _workspaceLanguage;
+  if (!lang || lang === "unknown") return query;
+  const hints = LANGUAGE_SEARCH_HINTS[lang];
+  if (!hints || hints.boost.length === 0) return query;
+
+  // Don't add hints if the query already contains one of the boost terms
+  const lowerQuery = query.toLowerCase();
+  const alreadyContains = hints.boost.some((b) => lowerQuery.includes(b.toLowerCase()));
+  if (alreadyContains) return query;
+
+  // Append top-2 boost terms with OR
+  const suffix = hints.boost.slice(0, 2).join(" OR ");
+  return `${query} ${suffix}`;
+}
+
+/**
+ * Rerank search results to prioritise those matching the workspace language
+ * ecosystem and demote results from other ecosystems.
+ */
+export function rerankResultsForWorkspace(
+  results: SearchOutputItem[],
+  language?: string,
+): SearchOutputItem[] {
+  const lang = language ?? _workspaceLanguage;
+  if (!lang || lang === "unknown" || results.length <= 1) return results;
+  const hints = LANGUAGE_SEARCH_HINTS[lang];
+  if (!hints) return results;
+
+  const boostLower = hints.boost.map((b) => b.toLowerCase());
+  const demoteLower = hints.demote.map((d) => d.toLowerCase());
+
+  function score(item: SearchOutputItem): number {
+    const text = `${item.title} ${item.snippet}`.toLowerCase();
+    let s = 0;
+    for (const b of boostLower) if (text.includes(b)) s += 1;
+    for (const d of demoteLower) if (text.includes(d)) s -= 1;
+    return s;
+  }
+
+  return [...results].sort((a, b) => score(b) - score(a));
+}
+
+// ---------------------------------------------------------------------------
 // Shared in-memory cache (provider-agnostic)
 // ---------------------------------------------------------------------------
 
@@ -279,39 +363,47 @@ export const toolDefinition: ToolDefinition = {
   execute: async ({ query }: { query: string }) => {
     const provider = appConfig.webSearchProvider;
     const startedAt = Date.now();
-    logger.debug({ tool: "search", provider, query }, "Search invoked");
 
-    const cached = getCachedEntry(query);
+    // Apply workspace-aware query shaping
+    const shapedQuery = shapeQueryForWorkspace(query);
+    if (shapedQuery !== query) {
+      logger.debug({ tool: "search", originalQuery: query, shapedQuery }, "Query shaped for workspace language");
+    }
+
+    logger.debug({ tool: "search", provider, query: shapedQuery }, "Search invoked");
+
+    const cached = getCachedEntry(shapedQuery);
     if (cached && cached.expiresAt > Date.now()) {
       logger.debug(
         {
           tool: "search",
           provider,
-          query,
+          query: shapedQuery,
           cacheHit: true,
           resultCount: cached.results.length,
           elapsedMs: Date.now() - startedAt,
         },
         "Search cache hit"
       );
-      return JSON.stringify(cached.results);
+      return JSON.stringify(rerankResultsForWorkspace(cached.results));
     }
 
     try {
-      const results = await runSearch(query);
-      storeCachedEntry(query, results);
+      const results = await runSearch(shapedQuery);
+      storeCachedEntry(shapedQuery, results);
+      const reranked = rerankResultsForWorkspace(results);
       logger.debug(
         {
           tool: "search",
           provider,
-          query,
+          query: shapedQuery,
           cacheHit: false,
-          resultCount: results.length,
+          resultCount: reranked.length,
           elapsedMs: Date.now() - startedAt,
         },
         "Search completed"
       );
-      return JSON.stringify(results);
+      return JSON.stringify(reranked);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (cached && appConfig.duckduckgoServeStaleOnError) {
@@ -319,7 +411,7 @@ export const toolDefinition: ToolDefinition = {
           {
             tool: "search",
             provider,
-            query,
+            query: shapedQuery,
             cacheHit: true,
             staleCacheServed: true,
             resultCount: cached.results.length,
@@ -328,14 +420,14 @@ export const toolDefinition: ToolDefinition = {
           },
           "Search failed; serving stale cached results"
         );
-        return JSON.stringify(cached.results);
+        return JSON.stringify(rerankResultsForWorkspace(cached.results));
       }
 
       logger.warn(
         {
           tool: "search",
           provider,
-          query,
+          query: shapedQuery,
           cacheHit: false,
           elapsedMs: Date.now() - startedAt,
           error: message,
@@ -344,7 +436,7 @@ export const toolDefinition: ToolDefinition = {
       );
       return JSON.stringify({
         error: message,
-        query,
+        query: shapedQuery,
         results: [],
       });
     }
