@@ -858,36 +858,6 @@ describe("runPlannedStep — original request grounding", () => {
         { type: "step", description: "Clone the forked repository locally to the workspace", toolsNeeded: [], estimatedComplexity: "low" },
       ],
     });
-
-    describe("invokeGraph — plan-only mode", () => {
-      it("skips execution when the request is explicitly plan-only", async () => {
-        const planJson = JSON.stringify({
-          version: "2.0",
-          goal: "plan only goal",
-          blocks: [
-            { type: "step", description: "Research dependencies", toolsNeeded: ["search"], estimatedComplexity: "low" },
-          ],
-        });
-        const workspaceCtxJson = JSON.stringify({
-          workspaceInfo: { language: "node", framework: "none", packageManager: "npm", hasTests: true, testCommand: "", lintCommand: "", buildCommand: "", entryPoints: [], gitInitialized: true },
-        });
-        const invoke = jest
-          .fn()
-          .mockResolvedValueOnce({ content: workspaceCtxJson, tool_calls: [] })
-          .mockResolvedValueOnce({ content: planJson, tool_calls: [] });
-        const llm = {
-          invoke,
-          bindTools: jest.fn().mockImplementation(() => ({ invoke })),
-        } as unknown as BaseChatModel;
-
-        const registry = new ToolRegistry();
-        const result = await invokeGraph("Just plan the implementation steps", { registry, llm });
-
-        expect(result.output).toContain("Plan-only mode enabled");
-        expect(result.output).toContain("\"version\": \"2.0\"");
-        expect(invoke).toHaveBeenCalledTimes(2);
-      });
-    });
     const workspaceCtxJson = JSON.stringify({
       workspaceInfo: { language: "node", framework: "none", packageManager: "npm", hasTests: true, testCommand: "", lintCommand: "", buildCommand: "", entryPoints: [], gitInitialized: true },
     });
@@ -923,6 +893,36 @@ describe("runPlannedStep — original request grounding", () => {
     expect(stepPrompts.length).toBeGreaterThan(0);
     expect(stepPrompts[0]).toContain("add Anthropic models to github repo huberp/agentloop");
   }, 30000);
+});
+
+describe("invokeGraph — plan-only mode", () => {
+  it("skips execution when the request is explicitly plan-only", async () => {
+    const planJson = JSON.stringify({
+      version: "2.0",
+      goal: "plan only goal",
+      blocks: [
+        { type: "step", description: "Research dependencies", toolsNeeded: ["search"], estimatedComplexity: "low" },
+      ],
+    });
+    const workspaceCtxJson = JSON.stringify({
+      workspaceInfo: { language: "node", framework: "none", packageManager: "npm", hasTests: true, testCommand: "", lintCommand: "", buildCommand: "", entryPoints: [], gitInitialized: true },
+    });
+    const invoke = jest
+      .fn()
+      .mockResolvedValueOnce({ content: workspaceCtxJson, tool_calls: [] })
+      .mockResolvedValueOnce({ content: planJson, tool_calls: [] });
+    const llm = {
+      invoke,
+      bindTools: jest.fn().mockImplementation(() => ({ invoke })),
+    } as unknown as BaseChatModel;
+
+    const registry = new ToolRegistry();
+    const result = await invokeGraph("Just plan the implementation steps", { registry, llm });
+
+    expect(result.output).toContain("Plan-only mode enabled");
+    expect(result.output).toContain("\"version\": \"2.0\"");
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

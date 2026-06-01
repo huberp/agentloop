@@ -110,40 +110,40 @@ describe("search tool — duckduckgo provider", () => {
       link: "https://example.com",
       snippet: "An example snippet.",
     });
+  });
 
-    it("does not append TS/JS constraints when Python is explicitly requested", async () => {
-      await toolDefinition.execute({ query: "python sdk setup with pip and pytest" });
-      expect(mockDdgSearch).toHaveBeenCalledWith("python sdk setup with pip and pytest");
+  it("does not append TS/JS constraints when Python is explicitly requested", async () => {
+    await toolDefinition.execute({ query: "python sdk setup with pip and pytest" });
+    expect(mockDdgSearch).toHaveBeenCalledWith("python sdk setup with pip and pytest");
+  });
+
+  it("down-ranks Python-only hits when Python was not requested", async () => {
+    mockDdgSearch.mockResolvedValueOnce({
+      noResults: false,
+      vqd: "vqd",
+      results: [
+        {
+          hostname: "python.org",
+          url: "https://python.org/sdk",
+          title: "Python SDK setup",
+          description: "Use pip and pytest with app.py",
+          rawDescription: "Use pip and pytest with app.py",
+          icon: "",
+        },
+        {
+          hostname: "nodejs.org",
+          url: "https://nodejs.org/sdk",
+          title: "Node.js SDK setup",
+          description: "Use npm package install for TypeScript",
+          rawDescription: "Use npm package install for TypeScript",
+          icon: "",
+        },
+      ],
     });
 
-    it("down-ranks Python-only hits when Python was not requested", async () => {
-      mockDdgSearch.mockResolvedValueOnce({
-        noResults: false,
-        vqd: "vqd",
-        results: [
-          {
-            hostname: "python.org",
-            url: "https://python.org/sdk",
-            title: "Python SDK setup",
-            description: "Use pip and pytest with app.py",
-            rawDescription: "Use pip and pytest with app.py",
-            icon: "",
-          },
-          {
-            hostname: "nodejs.org",
-            url: "https://nodejs.org/sdk",
-            title: "Node.js SDK setup",
-            description: "Use npm package install for TypeScript",
-            rawDescription: "Use npm package install for TypeScript",
-            icon: "",
-          },
-        ],
-      });
-
-      const result = await toolDefinition.execute({ query: "sdk setup guide" });
-      const parsed = JSON.parse(result) as Array<{ title: string }>;
-      expect(parsed[0].title).toMatch(/Node\.js SDK setup/);
-    });
+    const result = await toolDefinition.execute({ query: "sdk setup guide" });
+    const parsed = JSON.parse(result) as Array<{ title: string }>;
+    expect(parsed[0].title).toMatch(/Node\.js SDK setup/);
   });
 
   it("slices results to duckduckgoMaxResults", async () => {
