@@ -37,6 +37,7 @@ jobs:
 
       - name: Run websearch examples
         env:
+          ORCHESTRATOR: langgraph
           WEB_SEARCH_PROVIDER: tavily
           TAVILY_API_KEY: ${{ secrets.TAVILI_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
@@ -102,3 +103,39 @@ jobs:
           run_query "Anthropic docs model context protocol"
           run_query "LangChain TypeScript agent loop example"
           run_query "GitHub Actions setup-node cache npm"
+
+          echo "Running TS guidance scenario"
+          guidance_output="$(npm run --silent oneshot -- agent --json -u 'Just plan: recommend SDK setup for this repository and include concrete web findings')"
+          echo "$guidance_output" | node -e '
+            const fs = require("fs");
+            const raw = fs.readFileSync(0, "utf8").trim();
+            const candidates = raw
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .reverse();
+            let parsed;
+            for (const line of candidates) {
+              if (!line.startsWith("{")) continue;
+              try {
+                parsed = JSON.parse(line);
+                break;
+              } catch {
+                // keep scanning
+              }
+            }
+            if (!parsed || typeof parsed.output !== "string") {
+              console.error("Expected JSON output with string field: output");
+              process.exit(1);
+            }
+            const output = parsed.output;
+            if (!/(TypeScript|JavaScript|Node\\.js|npm)/i.test(output)) {
+              console.error("Expected TS/JS/Node-oriented guidance in output.");
+              process.exit(1);
+            }
+            if (/(\\bpip\\b|\\bpytest\\b|\\bapp\\.py\\b)/i.test(output)) {
+              console.error("Unexpected Python-only setup guidance found in TS scenario.");
+              process.exit(1);
+            }
+            console.log("TS guidance scenario passed.");
+          '

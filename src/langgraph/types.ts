@@ -101,6 +101,8 @@ export type NodeRecord = {
 export type GraphState = {
   /** Original user request */
   request: string;
+  /** When true, produce a plan and skip step execution. */
+  planOnly: boolean;
   /** Raw blocks plan from the planner */
   plan: BlocksPlan | null;
   /** Compiled DAG */
@@ -176,6 +178,8 @@ export type GraphTrace = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface GraphInvokeOptions {
+  /** When true, return only the generated plan (no execution). */
+  planOnly?: boolean;
   onFailure?: "retry" | "skip" | "abort";
   maxReplans?: number;
   maxRefinements?: number;

@@ -126,6 +126,7 @@ function makeResourcePlan(): BlocksPlan {
 function makeDefaultState(overrides: Partial<GraphState> = {}): GraphState {
   return {
     request: "test request",
+    planOnly: false,
     plan: null,
     compiledPlan: null,
     records: {},
@@ -142,6 +143,7 @@ function makeDefaultState(overrides: Partial<GraphState> = {}): GraphState {
     done: false,
     fatalError: "",
     events: [],
+    sharedContext: {},
     ...overrides,
   };
 }
@@ -810,6 +812,42 @@ describe("runPlannedStep — original request grounding", () => {
     expect(capturedSystemPrompt).not.toContain("Original user request (for context):");
   });
 
+  it("adds an insufficient-evidence guardrail when search is unavailable", async () => {
+    let capturedSystemPrompt = "";
+
+    const bindTools = jest.fn().mockImplementation(() => ({
+      invoke: jest.fn().mockImplementation((messages: unknown[]) => {
+        if (Array.isArray(messages)) {
+          const systemMsg = (messages as Array<{ _getType?: () => string; content?: string }>)
+            .find((m) => m._getType?.() === "system");
+          if (systemMsg?.content) capturedSystemPrompt = systemMsg.content as string;
+        }
+        return Promise.resolve({ content: "done", tool_calls: [] });
+      }),
+    }));
+
+    const llm = {
+      invoke: jest.fn().mockResolvedValue({ content: "done", tool_calls: [] }),
+      bindTools,
+    } as unknown as BaseChatModel;
+    const registry = new ToolRegistry();
+    const node = makeNode({ toolsNeeded: [] });
+
+    await runPlannedStep(node, {
+      registry,
+      llm,
+      originalRequest: "just plan sdk options for this repo",
+      sharedContext: {
+        workspaceContext: {
+          workspaceInfo: { language: "node" },
+        },
+      },
+    });
+
+    expect(capturedSystemPrompt).toContain("insufficient evidence");
+    expect(capturedSystemPrompt).toContain("Node/TypeScript");
+  });
+
   it("propagates request from state.request via invokeGraph", async () => {
     const capturedSystemPrompts: string[] = [];
 
@@ -819,6 +857,36 @@ describe("runPlannedStep — original request grounding", () => {
       blocks: [
         { type: "step", description: "Clone the forked repository locally to the workspace", toolsNeeded: [], estimatedComplexity: "low" },
       ],
+    });
+
+    describe("invokeGraph — plan-only mode", () => {
+      it("skips execution when the request is explicitly plan-only", async () => {
+        const planJson = JSON.stringify({
+          version: "2.0",
+          goal: "plan only goal",
+          blocks: [
+            { type: "step", description: "Research dependencies", toolsNeeded: ["search"], estimatedComplexity: "low" },
+          ],
+        });
+        const workspaceCtxJson = JSON.stringify({
+          workspaceInfo: { language: "node", framework: "none", packageManager: "npm", hasTests: true, testCommand: "", lintCommand: "", buildCommand: "", entryPoints: [], gitInitialized: true },
+        });
+        const invoke = jest
+          .fn()
+          .mockResolvedValueOnce({ content: workspaceCtxJson, tool_calls: [] })
+          .mockResolvedValueOnce({ content: planJson, tool_calls: [] });
+        const llm = {
+          invoke,
+          bindTools: jest.fn().mockImplementation(() => ({ invoke })),
+        } as unknown as BaseChatModel;
+
+        const registry = new ToolRegistry();
+        const result = await invokeGraph("Just plan the implementation steps", { registry, llm });
+
+        expect(result.output).toContain("Plan-only mode enabled");
+        expect(result.output).toContain("\"version\": \"2.0\"");
+        expect(invoke).toHaveBeenCalledTimes(2);
+      });
     });
     const workspaceCtxJson = JSON.stringify({
       workspaceInfo: { language: "node", framework: "none", packageManager: "npm", hasTests: true, testCommand: "", lintCommand: "", buildCommand: "", entryPoints: [], gitInitialized: true },

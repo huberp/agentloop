@@ -3,6 +3,7 @@ import { search as duckDuckSearch } from "duck-duck-scrape";
 import { appConfig } from "../config";
 import { logger } from "../logger";
 import { backoffMs, isRateLimitError } from "../retry";
+import { analyzeWorkspace } from "../workspace";
 import type { ToolDefinition } from "./registry";
 
 const schema = z.object({
@@ -27,6 +28,7 @@ interface SearchCacheEntry {
 }
 
 const queryCache = new Map<string, SearchCacheEntry>();
+let workspaceLanguageCache: { root: string; language: string } | null = null;
 
 function pruneCache(): void {
   while (queryCache.size > appConfig.duckduckgoCacheMaxEntries) {
@@ -54,6 +56,74 @@ function storeCachedEntry(query: string, results: SearchOutputItem[]): void {
     results,
   });
   pruneCache();
+}
+
+function explicitlyRequestsPython(text: string): boolean {
+  return /\b(python|pip|pytest|requirements\.txt|pyproject\.toml|app\.py)\b/i.test(text);
+}
+
+function isNodeTsLanguage(language: string): boolean {
+  return /^(node|typescript|javascript|ts|js)$/i.test(language.trim());
+}
+
+function alreadyConstrainedToTsJs(query: string): boolean {
+  return /\b(typescript|javascript|node(?:\.js)?|nodejs)\b/i.test(query);
+}
+
+async function detectWorkspaceLanguage(): Promise<string> {
+  const root = appConfig.workspaceRoot;
+  if (workspaceLanguageCache && workspaceLanguageCache.root === root) {
+    return workspaceLanguageCache.language;
+  }
+  try {
+    const info = await analyzeWorkspace(root);
+    const language = info.language ?? "unknown";
+    workspaceLanguageCache = { root, language };
+    return language;
+  } catch {
+    return "unknown";
+  }
+}
+
+async function shapeQuery(query: string): Promise<{ effectiveQuery: string; pythonRequested: boolean; preferTsJs: boolean }> {
+  const pythonRequested = explicitlyRequestsPython(query);
+  const workspaceLanguage = await detectWorkspaceLanguage();
+  const preferTsJs = isNodeTsLanguage(workspaceLanguage) && !pythonRequested;
+  if (
+    appConfig.webSearchProvider !== "none" &&
+    preferTsJs &&
+    !alreadyConstrainedToTsJs(query)
+  ) {
+    return {
+      effectiveQuery: `${query} (TypeScript OR JavaScript OR Node.js)`,
+      pythonRequested,
+      preferTsJs,
+    };
+  }
+  return { effectiveQuery: query, pythonRequested, preferTsJs };
+}
+
+function rerankResults(
+  results: SearchOutputItem[],
+  options: { preferTsJs: boolean; pythonRequested: boolean },
+): SearchOutputItem[] {
+  if (!options.preferTsJs) return results;
+
+  const tsRegex = /\b(typescript|javascript|node(?:\.js)?|npm|pnpm|yarn|sdk)\b/i;
+  const pyRegex = /\b(python|pip|pytest|app\.py|requirements\.txt)\b/i;
+  const scored = results.map((item, index) => {
+    const text = `${item.title} ${item.snippet} ${item.link}`;
+    let score = 0;
+    if (tsRegex.test(text)) score += 2;
+    if (!options.pythonRequested && pyRegex.test(text)) score -= 2;
+    return { item, index, score };
+  });
+
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.index - b.index;
+  });
+  return scored.map((entry) => entry.item);
 }
 
 // ---------------------------------------------------------------------------
@@ -279,15 +349,18 @@ export const toolDefinition: ToolDefinition = {
   execute: async ({ query }: { query: string }) => {
     const provider = appConfig.webSearchProvider;
     const startedAt = Date.now();
-    logger.debug({ tool: "search", provider, query }, "Search invoked");
+    const { effectiveQuery, pythonRequested, preferTsJs } = await shapeQuery(query);
+    const cacheKey = effectiveQuery;
+    logger.debug({ tool: "search", provider, query, effectiveQuery }, "Search invoked");
 
-    const cached = getCachedEntry(query);
+    const cached = getCachedEntry(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       logger.debug(
         {
           tool: "search",
           provider,
           query,
+          effectiveQuery,
           cacheHit: true,
           resultCount: cached.results.length,
           elapsedMs: Date.now() - startedAt,
@@ -298,13 +371,15 @@ export const toolDefinition: ToolDefinition = {
     }
 
     try {
-      const results = await runSearch(query);
-      storeCachedEntry(query, results);
+      const rawResults = await runSearch(effectiveQuery);
+      const results = rerankResults(rawResults, { preferTsJs, pythonRequested });
+      storeCachedEntry(cacheKey, results);
       logger.debug(
         {
           tool: "search",
           provider,
           query,
+          effectiveQuery,
           cacheHit: false,
           resultCount: results.length,
           elapsedMs: Date.now() - startedAt,
@@ -320,6 +395,7 @@ export const toolDefinition: ToolDefinition = {
             tool: "search",
             provider,
             query,
+            effectiveQuery,
             cacheHit: true,
             staleCacheServed: true,
             resultCount: cached.results.length,
@@ -336,6 +412,7 @@ export const toolDefinition: ToolDefinition = {
           tool: "search",
           provider,
           query,
+          effectiveQuery,
           cacheHit: false,
           elapsedMs: Date.now() - startedAt,
           error: message,

@@ -19,6 +19,7 @@ import { Annotation, StateGraph, START, END, MemorySaver } from "@langchain/lang
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 
 import { logger } from "../logger";
+import { appConfig } from "../config";
 import { ToolRegistry } from "../tools/registry";
 import { runSubagent } from "../subagents/runner";
 import type { AgentProfileRegistry } from "../agents/registry";
@@ -59,6 +60,7 @@ const appendEvents = () => ({
 
 const GraphAnnotation = Annotation.Root({
   request:            Annotation<string>(overwrite<string>()),
+  planOnly:           Annotation<boolean>(overwrite<boolean>()),
   plan:               Annotation<BlocksPlan | null>(overwrite<BlocksPlan | null>()),
   compiledPlan:       Annotation<CompiledPlan | null>(overwrite<CompiledPlan | null>()),
   records:            Annotation<Record<string, NodeRecord>>(overwrite<Record<string, NodeRecord>>()),
@@ -121,6 +123,19 @@ const BLOCKS_PLANNER_SYSTEM =
   `- Produce at least one block.\n` +
   `- Include all concrete values (URLs, repository names, file paths, version numbers, package names) needed to execute the step directly in the step description itself.`;
 
+function explicitlyRequestsPython(text: string): boolean {
+  return /\b(python|pip|pytest|requirements\.txt|pyproject\.toml|app\.py)\b/i.test(text);
+}
+
+function isNodeTsLanguage(language: string | undefined): boolean {
+  if (!language) return false;
+  return /^(node|typescript|javascript|ts|js)$/i.test(language.trim());
+}
+
+function isPlanOnlyRequest(request: string): boolean {
+  return /\b(just|only)\s+plan\b/i.test(request) || /\bplan[-\s]?only\b/i.test(request);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependencies injected when building the graph
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,9 +177,16 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
     // Explore the workspace so the planner knows what files/build-systems exist.
     // This prevents the planner from hallucinating file paths that don't exist.
     let workspaceCtxStr = "";
+    let workspaceLanguage: string | undefined;
+    let workspaceShared: Record<string, unknown> | undefined;
     try {
       const workspaceCtx = await exploreWorkspace({ registry: deps.registry, llm: deps.llm });
       workspaceCtxStr = JSON.stringify(workspaceCtx, null, 2);
+      workspaceLanguage =
+        typeof workspaceCtx.workspaceInfo?.language === "string"
+          ? workspaceCtx.workspaceInfo.language
+          : undefined;
+      workspaceShared = workspaceCtx as unknown as Record<string, unknown>;
       logger.info({ workspaceCtx }, "Graph: workspace exploration complete");
     } catch (err) {
       logger.warn(
@@ -184,6 +206,22 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
     const convHistory = state.sharedContext.conversationHistory as string | undefined;
     if (convHistory) {
       parts.push(`Previous conversation context:\n${convHistory}`);
+    }
+    const pythonRequested = explicitlyRequestsPython(state.request);
+    if (isNodeTsLanguage(workspaceLanguage) && !pythonRequested) {
+      parts.push(
+        `Language guardrail: Workspace language is Node/TypeScript. Plan TypeScript/JavaScript/Node.js-oriented steps and recommendations by default. Do not switch to Python unless the user explicitly requests it.`
+      );
+    }
+    if (availableTools.includes("search")) {
+      parts.push(
+        `Evidence guardrail: Do not plan steps that claim concrete SDK/framework findings without first gathering evidence using search/web fetch tools. If evidence cannot be gathered, require the final response to say "insufficient evidence".`
+      );
+      if (appConfig.webSearchProvider !== "none" && isNodeTsLanguage(workspaceLanguage) && !pythonRequested) {
+        parts.push(
+          `Search guardrail: For web research queries, append TypeScript/JavaScript/Node.js constraints (e.g. "TypeScript OR JavaScript OR Node.js") and prefer non-Python sources unless Python is explicitly requested.`
+        );
+      }
     }
     const task = parts.join("\n");
     const result = await runSubagent(
@@ -231,7 +269,11 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
     );
 
     const evt = makeEvent("plan_created", `Plan created with ${plan.blocks.length} top-level block(s)`);
-    return { plan, events: emit(state, evt) };
+    return {
+      plan,
+      events: emit(state, evt),
+      sharedContext: workspaceShared ? { ...state.sharedContext, workspaceContext: workspaceShared } : state.sharedContext,
+    };
   }
 
   // --- compile node ---
@@ -437,6 +479,7 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
       `Previously completed work:\n${completedSummary || "(none)"}\n` +
       `Failed steps:\n${failedSummary || "(none)"}\n` +
       `Reason for replan: ${state.replanReason}\n` +
+      `Guardrails: Do not claim concrete SDK/framework findings without search evidence; if evidence is missing, state "insufficient evidence".\n` +
       `Please produce a corrected blocks plan (version "2.0") that addresses the remaining work.` +
       ` Do not re-do already completed steps. Respond with JSON only.`;
 
@@ -480,6 +523,16 @@ export function buildGraphNodes(deps: GraphDeps, progressCb?: (evt: GraphEvent) 
 
   // --- finalize node ---
   function finalizeNode(state: GraphState): Partial<GraphState> {
+    if (state.planOnly && state.plan) {
+      logger.info("Graph: finalized in plan-only mode");
+      return {
+        output:
+          `Plan-only mode enabled: execution was skipped.\n\n` +
+          JSON.stringify(state.plan, null, 2),
+        done: true,
+      };
+    }
+
     const successes = Object.values(state.records).filter((r) => r.status === "success");
     const failures = Object.values(state.records).filter((r) => r.status === "failed");
 
@@ -534,7 +587,10 @@ export function buildGraph(deps: GraphDeps, opts?: GraphInvokeOptions) {
 
   // Edges
   builder.addEdge(START, "generate_plan");
-  builder.addEdge("generate_plan", "compile");
+  builder.addConditionalEdges("generate_plan", (state: GraphState) => {
+    if (state.planOnly) return "finalize";
+    return "compile";
+  });
   builder.addEdge("compile", "select_runnable");
   builder.addEdge("select_runnable", "execute_batch");
   builder.addEdge("execute_batch", "handle_outcomes");
@@ -569,9 +625,11 @@ export async function invokeGraph(
   opts: GraphInvokeOptions = {},
 ): Promise<{ output: string; trace?: GraphTrace }> {
   const graph = buildGraph(deps, opts);
+  const planOnly = opts.planOnly ?? isPlanOnlyRequest(request);
 
   const initialState: GraphState = {
     request,
+    planOnly,
     plan: null,
     compiledPlan: null,
     records: {},

@@ -49,6 +49,25 @@ export const STEP_FAILED_MARKERS = [
   "not able to",
 ];
 
+function explicitlyRequestsPython(text: string): boolean {
+  return /\b(python|pip|pytest|requirements\.txt|pyproject\.toml|app\.py)\b/i.test(text);
+}
+
+function isNodeTsLanguage(language: string | undefined): boolean {
+  if (!language) return false;
+  return /^(node|typescript|javascript|ts|js)$/i.test(language.trim());
+}
+
+function hasSearchEvidenceInSharedContext(sharedContext?: Record<string, unknown>): boolean {
+  if (!sharedContext) return false;
+  const stepOutputs = sharedContext.stepOutputs;
+  if (!stepOutputs || typeof stepOutputs !== "object") return false;
+  return Object.values(stepOutputs as Record<string, unknown>).some((value) => {
+    if (typeof value !== "string") return false;
+    return value.includes("\"link\"") || value.includes("\"title\"") || value.includes("\"snippet\"");
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,6 +135,32 @@ export async function runPlannedStep(
     ? `Available tools: ${stepToolNames.join(", ")}.`
     : "No tools available.";
 
+  const workspaceContext = deps.sharedContext?.workspaceContext as { workspaceInfo?: { language?: string } } | undefined;
+  const workspaceLanguage = workspaceContext?.workspaceInfo?.language;
+  const pythonRequested = explicitlyRequestsPython(
+    `${deps.originalRequest ?? ""}\n${node.description}`,
+  );
+  const hasSearchTool = stepToolNames.includes("search");
+  const hasPriorSearchEvidence = hasSearchEvidenceInSharedContext(deps.sharedContext);
+  const shouldBiasToTsJs = isNodeTsLanguage(workspaceLanguage) && !pythonRequested;
+
+  const guardrailLines: string[] = [];
+  if (shouldBiasToTsJs) {
+    guardrailLines.push(
+      `- Workspace language is Node/TypeScript. Keep recommendations and SDK guidance in TypeScript/JavaScript/Node.js unless Python is explicitly requested.`
+    );
+  }
+  if (hasSearchTool && appConfig.webSearchProvider !== "none" && shouldBiasToTsJs) {
+    guardrailLines.push(
+      `- For search queries, append constraints like "TypeScript OR JavaScript OR Node.js" and prioritize TS/JS/Node sources. Down-rank Python-only hits unless Python was requested.`
+    );
+  }
+  if (!hasSearchTool && !hasPriorSearchEvidence) {
+    guardrailLines.push(
+      `- You do not have search evidence available. Do NOT claim concrete research/SDK findings. If such findings are requested, respond with "insufficient evidence".`
+    );
+  }
+
   const stepSystemPrompt =
     `You are an AI agent executing one step of a larger plan.\n` +
     (deps.originalRequest ? `Original user request (for context): ${deps.originalRequest}\n` : ``) +
@@ -125,7 +170,8 @@ export async function runPlannedStep(
     `- Use tools only as needed to complete the step.\n` +
     `- Once you have enough information, respond with your final answer directly — do NOT call more tools.\n` +
     `- Do NOT repeat a tool call if you already have a useful result from it.\n` +
-    `- Be concise.`;
+    `- Be concise.\n` +
+    (guardrailLines.length > 0 ? `${guardrailLines.join("\n")}\n` : "");
 
   try {
     const result = await runSubagent(

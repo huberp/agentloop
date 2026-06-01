@@ -94,9 +94,11 @@ describe("search tool — duckduckgo provider", () => {
     appConfig.duckduckgoServeStaleOnError = originalSearchConfig.serveStaleOnError;
   });
 
-  it("calls duck-duck-scrape search() with the provided query string", async () => {
+  it("auto-appends TS/JS constraints for Node/TS workspaces", async () => {
     await toolDefinition.execute({ query: "OpenAI news" });
-    expect(mockDdgSearch).toHaveBeenCalledWith("OpenAI news");
+    expect(mockDdgSearch).toHaveBeenCalledWith(
+      expect.stringMatching(/OpenAI news.*TypeScript OR JavaScript OR Node\.js/i)
+    );
   });
 
   it("returns a JSON array with title, link and snippet fields", async () => {
@@ -107,6 +109,40 @@ describe("search tool — duckduckgo provider", () => {
       title: "Example Result",
       link: "https://example.com",
       snippet: "An example snippet.",
+    });
+
+    it("does not append TS/JS constraints when Python is explicitly requested", async () => {
+      await toolDefinition.execute({ query: "python sdk setup with pip and pytest" });
+      expect(mockDdgSearch).toHaveBeenCalledWith("python sdk setup with pip and pytest");
+    });
+
+    it("down-ranks Python-only hits when Python was not requested", async () => {
+      mockDdgSearch.mockResolvedValueOnce({
+        noResults: false,
+        vqd: "vqd",
+        results: [
+          {
+            hostname: "python.org",
+            url: "https://python.org/sdk",
+            title: "Python SDK setup",
+            description: "Use pip and pytest with app.py",
+            rawDescription: "Use pip and pytest with app.py",
+            icon: "",
+          },
+          {
+            hostname: "nodejs.org",
+            url: "https://nodejs.org/sdk",
+            title: "Node.js SDK setup",
+            description: "Use npm package install for TypeScript",
+            rawDescription: "Use npm package install for TypeScript",
+            icon: "",
+          },
+        ],
+      });
+
+      const result = await toolDefinition.execute({ query: "sdk setup guide" });
+      const parsed = JSON.parse(result) as Array<{ title: string }>;
+      expect(parsed[0].title).toMatch(/Node\.js SDK setup/);
     });
   });
 
@@ -242,7 +278,8 @@ describe("search tool — tavily provider", () => {
     );
 
     const callBody = JSON.parse((fetchSpy.mock.calls[0] as [string, RequestInit])[1].body as string) as Record<string, unknown>;
-    expect(callBody.query).toBe("tavily test");
+    expect(callBody.query).toMatch(/tavily test/);
+    expect(callBody.query).toMatch(/TypeScript OR JavaScript OR Node\.js/i);
     expect(callBody.api_key).toBe("test-tavily-key");
     expect(callBody.max_results).toBe(5);
   });
@@ -352,7 +389,8 @@ describe("search tool — langsearch provider", () => {
     );
 
     const callBody = JSON.parse((fetchSpy.mock.calls[0] as [string, RequestInit])[1].body as string) as Record<string, unknown>;
-    expect(callBody.query).toBe("langsearch test");
+    expect(callBody.query).toMatch(/langsearch test/);
+    expect(callBody.query).toMatch(/TypeScript OR JavaScript OR Node\.js/i);
     expect(callBody.count).toBe(5);
   });
 
