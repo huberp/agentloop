@@ -170,8 +170,8 @@ export async function runPlannedStep(
     `- Use tools only as needed to complete the step.\n` +
     `- Once you have enough information, respond with your final answer directly — do NOT call more tools.\n` +
     `- Do NOT repeat a tool call if you already have a useful result from it.\n` +
-    `- Be concise.\n` +
-    (guardrailLines.length > 0 ? `${guardrailLines.join("\n")}\n` : "");
+    `- Be concise.` +
+    (guardrailLines.length > 0 ? `\n${guardrailLines.join("\n")}` : "");
 
   try {
     const result = await runSubagent(
