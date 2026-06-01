@@ -28,7 +28,7 @@ interface SearchCacheEntry {
 }
 
 const queryCache = new Map<string, SearchCacheEntry>();
-let workspaceLanguageCache: { root: string; language: string } | null = null;
+const workspaceLanguageCache = new Map<string, string>();
 
 function pruneCache(): void {
   while (queryCache.size > appConfig.duckduckgoCacheMaxEntries) {
@@ -72,13 +72,12 @@ function alreadyConstrainedToTsJs(query: string): boolean {
 
 async function detectWorkspaceLanguage(): Promise<string> {
   const root = appConfig.workspaceRoot;
-  if (workspaceLanguageCache && workspaceLanguageCache.root === root) {
-    return workspaceLanguageCache.language;
-  }
+  const cached = workspaceLanguageCache.get(root);
+  if (cached) return cached;
   try {
     const info = await analyzeWorkspace(root);
     const language = info.language ?? "unknown";
-    workspaceLanguageCache = { root, language };
+    workspaceLanguageCache.set(root, language);
     return language;
   } catch {
     return "unknown";
