@@ -1,0 +1,13 @@
+{
+  "llm": {
+    "activeModel": "default"
+  },
+  "models": [
+    {
+      "id": "default",
+      "provider": "mistral",
+      "model": "mistral-small-latest",
+      "temperature": 0.2
+    }
+  ]
+}
