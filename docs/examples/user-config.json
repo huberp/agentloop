@@ -1,0 +1,27 @@
+{
+  "llm": {
+    "activeModel": "default",
+    "temperature": 0.3
+  },
+  "models": [
+    {
+      "id": "default",
+      "provider": "mistral",
+      "model": "mistral-small-latest",
+      "temperature": 0.2
+    },
+    {
+      "id": "strong",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "temperature": 0.1
+    }
+  ],
+  "tools": {
+    "timeoutMs": 30000,
+    "maxConcurrent": 10
+  },
+  "observability": {
+    "logLevel": "info"
+  }
+}

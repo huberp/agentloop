@@ -1,6 +1,21 @@
 # Configuration Reference
 
+agentloop supports a **layered configuration system** that combines JSON config files, environment variables, and CLI flags.
+
+## Layered JSON Configuration (New)
+
+See **[Layered Config Guide](layered-config.md)** for the full guide on:
+- Structured JSON config at `~/.agentloop/config.json` (user-level) and `.agentloop/config.json` (repo-level)
+- Config precedence: defaults < user JSON < repo JSON < env vars < CLI flags
+- Named model configurations with merge-by-id
+- Migration from `.env`-only setup
+- Example config files in `docs/examples/`
+
+## Environment Variables
+
 All runtime settings are loaded from environment variables via `src/config.ts` using `dotenv`. Copy `.env.example` to `.env` and set values before starting the agent.
+
+Environment variables override JSON config values, so both systems can coexist.
 
 ---
 

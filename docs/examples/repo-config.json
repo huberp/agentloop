@@ -1,0 +1,21 @@
+{
+  "llm": {
+    "activeModel": "strong"
+  },
+  "models": [
+    {
+      "id": "strong",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "temperature": 0.1
+    }
+  ],
+  "tools": {
+    "blocklist": ["shell"],
+    "timeoutMs": 60000
+  },
+  "execution": {
+    "sandboxMode": "docker",
+    "dockerImage": "node:22-alpine"
+  }
+}
