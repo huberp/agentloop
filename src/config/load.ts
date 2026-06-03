@@ -373,7 +373,12 @@ export function buildEnvOverlay(): PartialAgentLoopConfig {
   const execEnv = envStr("EXECUTION_ENVIRONMENT");
   if (execEnv !== undefined) exec.environment = execEnv;
   const sandboxMode = envStr("SANDBOX_MODE");
-  if (sandboxMode !== undefined) exec.sandboxMode = sandboxMode as "none" | "docker";
+  if (sandboxMode !== undefined) {
+    if (sandboxMode === "none" || sandboxMode === "docker") {
+      exec.sandboxMode = sandboxMode;
+    }
+    // Invalid values are silently ignored (defaults remain)
+  }
   const dockerImage = envStr("SANDBOX_DOCKER_IMAGE");
   if (dockerImage !== undefined) exec.dockerImage = dockerImage;
   if (Object.keys(exec).length > 0)
