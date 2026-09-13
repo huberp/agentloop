@@ -15,13 +15,19 @@ from agentloop.llm import create_model_for_provider
 
 @pytest.mark.asyncio
 async def test_executor_invoke_returns_output(test_settings) -> None:
-    executor = AgentExecutor(settings=test_settings, model=TestModel(custom_output_text="Hello from test"))
+    executor = AgentExecutor(
+        settings=test_settings,
+        model=TestModel(call_tools=[], custom_output_text="Hello from test"),
+    )
     assert await executor.invoke("Hi") == "Hello from test"
 
 
 @pytest.mark.asyncio
 async def test_executor_accumulates_history(test_settings) -> None:
-    executor = AgentExecutor(settings=test_settings, model=TestModel(custom_output_text="done"))
+    executor = AgentExecutor(
+        settings=test_settings,
+        model=TestModel(call_tools=[], custom_output_text="done"),
+    )
     await executor.invoke("first")
     await executor.invoke("second")
     assert len(executor.get_history()) == 4
@@ -35,6 +41,9 @@ def test_create_model_for_supported_providers() -> None:
 
 
 def test_executor_keeps_profile_histories_separate(test_settings) -> None:
-    executor = AgentExecutor(settings=test_settings, model=TestModel(custom_output_text="ok"))
+    executor = AgentExecutor(
+        settings=test_settings,
+        model=TestModel(call_tools=[], custom_output_text="ok"),
+    )
     assert executor.get_history("alpha") == []
     assert executor.get_history("beta") == []

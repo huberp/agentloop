@@ -10,17 +10,26 @@ from pydantic_ai.settings import ModelSettings
 
 from agentloop.config import Settings, settings as default_settings
 from agentloop.llm import ProviderModel, create_model
+from agentloop.security import ConcurrencyLimiter, PermissionManager
 
 
 @dataclass(slots=True)
 class AgentDeps:
     settings: Settings
     workspace_root: Path
-    permission_manager: Any | None = None
-    concurrency_limiter: Any | None = None
+    permission_manager: PermissionManager = field(init=False)
+    concurrency_limiter: ConcurrencyLimiter = field(init=False)
     tool_call_count: int = 0
     max_iterations: int = 20
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.permission_manager = self.metadata.get("permission_manager") or PermissionManager(
+            self.settings
+        )
+        self.concurrency_limiter = self.metadata.get("concurrency_limiter") or ConcurrencyLimiter(
+            self.settings.max_concurrent_tools
+        )
 
 
 def create_agent(

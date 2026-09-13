@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
+import inspect
+from collections.abc import Awaitable
 from dataclasses import asdict, dataclass
+from functools import wraps
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
+from pydantic_ai import RunContext
+from pydantic_ai.exceptions import ModelRetry
 from pydantic_ai.tools import Tool
+
+from agentloop.errors import ToolExecutionError
+
+if TYPE_CHECKING:
+    from agentloop.agent import AgentDeps
 
 PermissionLevel = Literal["safe", "cautious", "dangerous"]
 ToolSource = Literal["built-in", "custom", "mcp"]
@@ -105,7 +116,7 @@ class ToolRegistry:
         for definition in self._definitions.values():
             result.append(
                 Tool(
-                    definition.fn,
+                    _wrap_tool_callable(definition),
                     name=definition.name,
                     description=definition.description,
                     timeout=(definition.timeout_ms / 1000) if definition.timeout_ms else None,
@@ -136,3 +147,52 @@ def get_tool_definition(fn: Callable[..., Any]) -> ToolDefinition:
     if not isinstance(definition, ToolDefinition):
         raise TypeError(f"{fn!r} is not decorated with @tool_def")
     return definition
+
+
+def build_prepare_hook() -> ToolPrepareHook:
+    def prepare(ctx: RunContext["AgentDeps"], tool_def: Any) -> Any:
+        metadata = getattr(tool_def, "metadata", {}) or {}
+        permissions = metadata.get("permissions", "safe")
+        decision = ctx.deps.permission_manager.check(tool_def.name, {}, permissions=permissions)
+        if decision in {"block", "confirm"}:
+            return None
+        return tool_def
+
+    return prepare
+
+
+def _wrap_tool_callable(definition: ToolDefinition) -> Callable[..., Awaitable[Any]]:
+    @wraps(definition.fn)
+    async def wrapped(*args: Any, **kwargs: Any) -> Any:
+        ctx = args[0] if args else None
+        timeout_ms = definition.timeout_ms
+        if isinstance(ctx, RunContext):
+            ctx.deps.tool_call_count += 1
+            if ctx.deps.tool_call_count > ctx.deps.max_iterations:
+                raise ModelRetry("Maximum tool iterations reached.")
+            if timeout_ms is None:
+                timeout_ms = ctx.deps.settings.tool_timeout_ms
+            limiter = ctx.deps.concurrency_limiter
+        else:
+            limiter = None
+        async def invoke() -> Any:
+            result = definition.fn(*args, **kwargs)
+            if inspect.isawaitable(result):
+                return await result
+            return result
+        async def invoke_with_timeout() -> Any:
+            if timeout_ms is None:
+                return await invoke()
+            try:
+                return await asyncio.wait_for(invoke(), timeout=timeout_ms / 1000)
+            except TimeoutError as exc:
+                raise ToolExecutionError(
+                    f"Tool '{definition.name}' timed out after {timeout_ms}ms"
+                ) from exc
+        if limiter is None:
+            return await invoke_with_timeout()
+        async with limiter.acquire():
+            return await invoke_with_timeout()
+
+    wrapped.__signature__ = inspect.signature(definition.fn)  # type: ignore[attr-defined]
+    return wrapped
