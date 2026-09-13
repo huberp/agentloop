@@ -21,6 +21,7 @@ dependencies = [
   "httpx",
   "gitpython",
   "duckduckgo-search",
+  "markdownify",
   "click",
   "rich",
 ]
