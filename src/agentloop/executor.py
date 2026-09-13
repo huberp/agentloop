@@ -11,6 +11,7 @@ from agentloop.agent import AgentDeps, create_agent
 from agentloop.config import Settings, settings as default_settings
 from agentloop.llm import ProviderModel, create_model
 from agentloop.security import ConcurrencyLimiter, PermissionManager
+from agentloop.streaming import stream_with_tools
 from agentloop.tools import load_builtin_tool_registry
 from agentloop.tools.registry import ToolRegistry, build_prepare_hook
 
@@ -82,6 +83,11 @@ class AgentExecutor:
         )
 
     async def invoke(self, prompt: str, profile: str | None = None) -> str:
+        if self.settings.streaming_enabled:
+            chunks: list[str] = []
+            async for delta in self.stream(prompt, profile=profile):
+                chunks.append(delta)
+            return "".join(chunks)
         await self._ensure_initialized()
         key = self._profile_key(profile)
         agent = self._get_agent(profile)
@@ -97,14 +103,13 @@ class AgentExecutor:
         await self._ensure_initialized()
         key = self._profile_key(profile)
         agent = self._get_agent(profile)
-        async with agent.run_stream(
+        async for delta in stream_with_tools(
+            agent,
             prompt,
-            message_history=self._history.setdefault(key, []),
-            deps=self._make_deps(),
-        ) as stream_result:
-            async for delta in stream_result.stream_text(delta=True):
-                yield delta
-        self._history[key].extend(stream_result.new_messages())
+            self._history.setdefault(key, []),
+            self._make_deps(),
+        ):
+            yield delta
 
     def get_history(self, profile: str | None = None) -> list[ModelMessage]:
         return list(self._history.get(self._profile_key(profile), []))
