@@ -35,6 +35,7 @@ class AgentDeps:
 def create_agent(
     tools: Sequence[Any] | None = None,
     *,
+    toolsets: Sequence[Any] | None = None,
     system_prompt: str | Sequence[str] | None = None,
     config: Settings | None = None,
     model: ProviderModel | str | None = None,
@@ -48,6 +49,7 @@ def create_agent(
         deps_type=AgentDeps,
         system_prompt=prompt,
         tools=list(tools or []),
+        toolsets=list(toolsets or []),
         retries=resolved.llm_retry_max,
         model_settings=ModelSettings(temperature=resolved.llm_temperature),
         name=name,

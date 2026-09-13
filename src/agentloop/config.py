@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+
+from agentloop.mcp import McpServerConfig
 
 
 class JsonConfigSettingsSource(PydanticBaseSettingsSource):
@@ -22,15 +24,6 @@ class JsonConfigSettingsSource(PydanticBaseSettingsSource):
             return {}
         raw = json.loads(self.path.read_text())
         return {str(key): value for key, value in raw.items()}
-
-
-class McpServerConfig(BaseModel):
-    name: str
-    transport: Literal["stdio", "sse", "http"]
-    command: str | None = None
-    args: list[str] = Field(default_factory=list)
-    url: str | None = None
-
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

@@ -10,6 +10,7 @@ from pydantic_ai.messages import ModelMessage
 from agentloop.agent import AgentDeps, create_agent
 from agentloop.config import Settings, settings as default_settings
 from agentloop.llm import ProviderModel, create_model
+from agentloop.mcp import build_mcp_servers
 from agentloop.security import ConcurrencyLimiter, PermissionManager
 from agentloop.streaming import stream_with_tools
 from agentloop.tools import load_builtin_tool_registry
@@ -29,6 +30,7 @@ class AgentExecutor:
         self._model = model
         self._system_prompt = system_prompt
         self._tools = list(tools or [])
+        self._toolsets: list[Any] = []
         self._registry: ToolRegistry | None = None
         self._history: dict[str, list[ModelMessage]] = {"default": []}
         self._agent_cache: dict[str, Agent[AgentDeps, str]] = {}
@@ -48,8 +50,10 @@ class AgentExecutor:
             if not self._tools:
                 self._registry = await load_builtin_tool_registry()
                 self._tools = self._registry.to_pydantic_ai_tools(prepare=build_prepare_hook())
+            self._toolsets = build_mcp_servers(self.settings.mcp_servers)
             self._agent_cache["default"] = create_agent(
                 self._tools,
+                toolsets=self._toolsets,
                 system_prompt=self._system_prompt,
                 config=self.settings,
                 model=self._model,
@@ -64,6 +68,7 @@ class AgentExecutor:
         if key not in self._agent_cache:
             self._agent_cache[key] = create_agent(
                 self._tools,
+                toolsets=self._toolsets,
                 system_prompt=self._system_prompt,
                 config=self.settings,
                 model=self._model,
