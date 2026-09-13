@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentloop"
+version = "0.1.0"
+description = "Python PydanticAI agent loop"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "P Huber" }]
+keywords = ["pydantic-ai", "mistral", "agent", "python"]
+dependencies = [
+  "pydantic-ai[mistral,openai,anthropic]",
+  "pydantic-settings",
+  "pydantic-ai-skills",
+  "logfire[pydantic-ai]",
+  "structlog",
+  "python-dotenv",
+  "httpx",
+  "gitpython",
+  "duckduckgo-search",
+  "click",
+  "rich",
+]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "mypy",
+  "ruff",
+]
+
+[project.scripts]
+agentloop = "agentloop.cli.main:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentloop"]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "RUF"]
