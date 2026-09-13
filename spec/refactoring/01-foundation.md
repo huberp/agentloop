@@ -52,8 +52,10 @@ Add to `pyproject.toml`:
 
 | Package | Purpose |
 |---|---|
-| `pydantic-ai[mistral]` | Agent loop + Mistral provider |
+| `pydantic-ai[mistral]` | Agent loop + Mistral provider (+ built-in MCP, streaming, multi-agent) |
 | `pydantic-settings` | Layered configuration from env/dotenv/JSON |
+| `pydantic-ai-skills` | Progressive-disclosure skill system (Phase 8) |
+| `logfire[pydantic-ai]` | Observability — distributed traces, token/cost accounting (Phase 9) |
 | `structlog` | Structured JSON logging |
 | `python-dotenv` | `.env` file loading |
 | `httpx` | HTTP client (web-fetch tool, later phases) |

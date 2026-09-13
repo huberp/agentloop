@@ -2,7 +2,7 @@
 
 ## Objective
 
-Port the multi-step `Orchestrator` / `Planner` and parallel `SubagentManager` from LangGraph + custom TypeScript to Python using `asyncio` and PydanticAI `Agent` instances.
+Port the multi-step `Orchestrator` / `Planner` and parallel `SubagentManager` to Python using **PydanticAI's built-in "agent as tool" multi-agent delegation pattern** and `asyncio`. Remove LangGraph entirely.
 
 ---
 
@@ -12,30 +12,24 @@ Port the multi-step `Orchestrator` / `Planner` and parallel `SubagentManager` fr
 
 ```
 src/langgraph/          LangGraph-based orchestrator
-  graph.ts              StateGraph definition
-  compiler.ts           Plan → graph nodes
-  scheduler.ts          Resume / step-skip logic
-  step-runner.ts        Per-step agent invocation
-  types.ts              LangGraph types
-
-src/subagents/
-  runner.ts             SubagentManager.runParallel()
-  types.ts              SubagentTask, CheckpointStore
-
+src/subagents/          SubagentManager.runParallel()
 src/orchestrator.ts     executePlan() — ties everything together
 ```
 
-LangGraph (`@langchain/langgraph`) is used only for the multi-step orchestration path. The default (non-LangGraph) path uses a custom `executePlan()` loop.
+LangGraph is used only for the multi-step orchestration path. The default path already uses a custom `executePlan()` loop.
 
 ### PydanticAI Built-Ins Used
 
 | Built-in | Replaces |
 |---|---|
-| `pydantic_ai.Agent.run()` per step | LangGraph `StateGraph` node execution |
-| `asyncio.gather()` | `SubagentManager.runParallel()` |
+| **"Agent as tool"** — delegate agent called inside a parent `@agent.tool` | LangGraph `StateGraph` + custom `executePlan()` node dispatch |
+| `ctx.usage` propagation to delegate `.run()` | Manual token tracking across agent calls |
+| `UsageLimits` passed to delegate runs | Per-subagent cost / token caps |
+| `asyncio.gather()` over delegate `.run()` calls | `SubagentManager.runParallel()` |
+| `Agent(output_type=Plan)` structured output | Custom `Planner` JSON parsing |
 | `pydantic_ai.models.test.TestModel` | Orchestrator unit tests |
 
-LangGraph is **fully removed**; no equivalent is pulled in. The orchestration logic is reimplemented as a lightweight Python `Orchestrator` class.
+LangGraph is **fully removed**. Orchestration is expressed as PydanticAI agents that call other agents through tools — the official PydanticAI multi-agent pattern.
 
 ---
 
@@ -44,6 +38,9 @@ LangGraph is **fully removed**; no equivalent is pulled in. The orchestration lo
 ### 7.1 — Plan Types (`src/agentloop/orchestrator/types.py`)
 
 ```python
+from pydantic import BaseModel
+from typing import Literal
+
 class PlanStep(BaseModel):
     id: str
     description: str
@@ -56,93 +53,139 @@ class Plan(BaseModel):
     resume_from: int | None = None
 ```
 
-### 7.2 — Planner (`src/agentloop/orchestrator/planner.py`)
+### 7.2 — Delegate Agents (one per role)
+
+Define stateless module-level agents for each role. Agents are instantiated once and reused:
 
 ```python
-class Planner:
-    def __init__(self, agent: Agent, deps: AgentDeps): ...
+# src/agentloop/orchestrator/agents.py
+from pydantic_ai import Agent
 
-    async def plan(self, task: str) -> Plan:
-        """Ask the LLM to produce a structured Plan for the given task."""
-        result = await self._agent.run(
-            f"Create a step-by-step plan for: {task}",
-            result_type=Plan,   # ← PydanticAI structured output
-        )
-        return result.output
+planner_agent = Agent(
+    model=...,
+    name="planner",
+    instructions="Decompose the given task into a step-by-step plan.",
+    output_type=Plan,   # structured output — no custom parsing
+)
+
+step_agent = Agent(
+    model=...,
+    name="step_executor",
+    instructions="Execute the described step and return your result.",
+    tools=[...],        # full tool set
+)
 ```
 
-- `result_type=Plan` uses PydanticAI's built-in structured output feature — the LLM is asked to return a valid `Plan` JSON. No custom parsing.
+### 7.3 — Orchestrator Agent (parent, "agent as tool" pattern)
 
-### 7.3 — Orchestrator (`src/agentloop/orchestrator/executor.py`)
+The orchestrator agent delegates each step to `step_agent` via a tool. This is the official PydanticAI multi-agent pattern:
 
 ```python
-class Orchestrator:
-    async def execute_plan(
-        self,
-        plan: Plan,
-        checkpoint_store: CheckpointStore | None = None,
-    ) -> list[StepResult]:
-        results = []
-        start = (plan.resume_from or 1) - 1
-        for i, step in enumerate(plan.steps[start:], start=start):
-            if checkpoint_store:
-                await checkpoint_store.save(i, step)
-            result = await self._run_step(step)
-            results.append(result)
-            if result.status == "failed" and step.on_failure == "abort":
+# src/agentloop/orchestrator/executor.py
+from pydantic_ai import Agent, RunContext
+from agentloop.orchestrator.agents import planner_agent, step_agent
+
+orchestrator = Agent(
+    model=...,
+    name="orchestrator",
+    instructions="Plan and execute multi-step tasks by delegating each step.",
+)
+
+@orchestrator.tool
+async def execute_step(ctx: RunContext[AgentDeps], step_description: str) -> str:
+    """Delegate one plan step to the step_executor agent."""
+    result = await step_agent.run(
+        step_description,
+        deps=ctx.deps,
+        usage=ctx.usage,  # propagate usage tracking to delegate
+    )
+    return result.output
+```
+
+- `ctx.usage` propagation ensures token accounting is correct across the delegation chain.
+- `UsageLimits` can be passed to delegate calls to cap per-step cost.
+- The orchestrator's own loop is driven by PydanticAI (no manual iteration).
+
+### 7.4 — Planner (`src/agentloop/orchestrator/planner.py`)
+
+```python
+async def make_plan(task: str, deps: AgentDeps) -> Plan:
+    result = await planner_agent.run(
+        f"Create a step-by-step plan for: {task}",
+        deps=deps,
+        usage=deps.usage,
+    )
+    return result.output   # already a validated Plan — no custom parsing
+```
+
+`output_type=Plan` uses PydanticAI's built-in structured output. The model is instructed to return valid `Plan` JSON; PydanticAI validates and retries automatically on schema errors.
+
+### 7.5 — Parallel Steps: `asyncio.gather()`
+
+For steps with no inter-dependencies, run delegate calls concurrently:
+
+```python
+async def run_parallel_steps(
+    steps: list[PlanStep],
+    deps: AgentDeps,
+) -> list[str]:
+    coros = [
+        step_agent.run(s.description, deps=deps, usage=deps.usage)
+        for s in steps
+    ]
+    results = await asyncio.gather(*coros, return_exceptions=True)
+    return [r.output if not isinstance(r, Exception) else str(r) for r in results]
+```
+
+`asyncio.gather()` replaces `SubagentManager.runParallel()`. Write-conflict detection (`mutates_file`) is preserved in a pre-gather check.
+
+### 7.6 — `on_failure` / `resume_from` Logic
+
+Sequential `on_failure` handling wraps the delegate tool call:
+
+```python
+async def execute_plan(plan: Plan, deps: AgentDeps) -> list[StepResult]:
+    results = []
+    start = (plan.resume_from or 1) - 1
+    for step in plan.steps[start:]:
+        try:
+            out = await step_agent.run(step.description, deps=deps, usage=deps.usage)
+            results.append(StepResult(step_id=step.id, output=out.output, status="ok"))
+        except Exception as exc:
+            results.append(StepResult(step_id=step.id, error=str(exc), status="failed"))
+            if step.on_failure == "abort":
                 break
-        return results
-
-    async def _run_step(self, step: PlanStep) -> StepResult:
-        agent = self._agent_factory(profile=step.profile)
-        result = await agent.run(step.description, deps=self._deps)
-        return StepResult(step_id=step.id, output=result.output)
+            # "skip" or "retry" handled here
+    return results
 ```
 
-### 7.4 — SubagentManager (`src/agentloop/subagents/manager.py`)
-
-```python
-class SubagentManager:
-    async def run_parallel(self, tasks: list[SubagentTask]) -> list[SubagentResult]:
-        self._detect_write_conflicts(tasks)
-        coros = [self._run_task(t) for t in tasks]
-        return await asyncio.gather(*coros, return_exceptions=True)
-```
-
-- `asyncio.gather()` replaces the custom parallel runner — no LangGraph nodes.
-- Write-conflict detection (`mutates_file`) is preserved in `_detect_write_conflicts`.
-
-### 7.5 — CheckpointStore
+### 7.7 — CheckpointStore (unchanged interface)
 
 ```python
 class CheckpointStore(Protocol):
     async def save(self, step_index: int, step: PlanStep) -> None: ...
-    async def load(self) -> int | None: ...   # returns resume_from index
+    async def load(self) -> int | None: ...
 
 class InMemoryCheckpointStore(CheckpointStore): ...
 class FileCheckpointStore(CheckpointStore): ...   # persists to JSON
 ```
 
-### 7.6 — Remove LangGraph
+### 7.8 — Remove LangGraph
 
-- Delete the entire `src/langgraph/` directory and its TypeScript source.
-- Remove `@langchain/langgraph` from `package.json`.
-- The `ORCHESTRATOR=langgraph` env-var option is removed; only `ORCHESTRATOR=default` remains (and is eventually deprecated in favour of the Python orchestrator path).
-
-### 7.7 — `plan_only` Mode
-
-When `settings.plan_only` is `True`, `Orchestrator.execute_plan()` returns the plan as text without executing any steps.
+- Delete `src/langgraph/` entirely and remove `@langchain/langgraph` from `package.json`.
+- The `ORCHESTRATOR=langgraph` env-var option is removed; only `ORCHESTRATOR=default` remains.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `Planner.plan("refactor the codebase")` returns a valid `Plan` with at least one step.
-- [ ] `Orchestrator.execute_plan(plan)` executes each step in order.
-- [ ] A failing step with `on_failure="abort"` stops the orchestration.
+- [ ] `make_plan("refactor the codebase")` returns a valid `Plan` with at least one step.
+- [ ] Each step is delegated to `step_agent` via the `execute_step` tool; no manual loop.
+- [ ] Usage tokens are correctly summed across parent and delegate agents.
+- [ ] A failing step with `on_failure="abort"` stops orchestration.
 - [ ] A failing step with `on_failure="skip"` continues to the next step.
-- [ ] `resume_from=2` skips step 1 and resumes from step 2.
-- [ ] `SubagentManager.run_parallel([t1, t2])` runs both concurrently.
+- [ ] `resume_from=2` skips step 1.
+- [ ] Parallel steps with `asyncio.gather()` run concurrently.
 - [ ] Write conflicts between parallel tasks are detected before execution.
 - [ ] All tests use `TestModel`; no real LLM calls.
 
@@ -154,18 +197,16 @@ When `settings.plan_only` is `True`, `Orchestrator.execute_plan()` returns the p
 |---|---|
 | Create | `src/agentloop/orchestrator/__init__.py` |
 | Create | `src/agentloop/orchestrator/types.py` |
+| Create | `src/agentloop/orchestrator/agents.py` |
 | Create | `src/agentloop/orchestrator/planner.py` |
 | Create | `src/agentloop/orchestrator/executor.py` |
-| Create | `src/agentloop/subagents/__init__.py` |
-| Create | `src/agentloop/subagents/manager.py` |
-| Create | `src/agentloop/subagents/types.py` |
 | Create | `tests/test_orchestrator.py` |
-| Create | `tests/test_subagents.py` |
 | Delete (later) | `src/langgraph/` (all files) |
-| Delete (later) | `src/subagents/runner.ts`, `src/subagents/types.ts` |
+| Delete (later) | `src/subagents/runner.ts`, `src/subagents/types.ts`, `src/orchestrator.ts` |
 
 ---
 
 ## Dependencies Removed
 
 - `@langchain/langgraph` — entire LangGraph dependency eliminated
+
