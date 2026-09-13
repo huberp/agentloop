@@ -3,7 +3,8 @@ from __future__ import annotations
 import ast
 import math
 import operator
-from typing import Any
+from collections.abc import Callable
+from typing import cast
 
 from pydantic import BaseModel
 from pydantic_ai import RunContext
@@ -22,7 +23,14 @@ _ALLOWED_BINOPS = {
     ast.FloorDiv: operator.floordiv,
 }
 _ALLOWED_UNARY = {ast.UAdd: operator.pos, ast.USub: operator.neg}
-_ALLOWED_FUNCS = {name: getattr(math, name) for name in ("sqrt", "sin", "cos", "tan", "log", "pi", "e") if hasattr(math, name)}
+_ALLOWED_FUNCTIONS: dict[str, Callable[..., float]] = {
+    "sqrt": math.sqrt,
+    "sin": math.sin,
+    "cos": math.cos,
+    "tan": math.tan,
+    "log": math.log,
+}
+_ALLOWED_CONSTANTS: dict[str, float] = {"pi": math.pi, "e": math.e}
 
 
 class CalculateInput(BaseModel):
@@ -35,13 +43,15 @@ def _eval(node: ast.AST) -> float:
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
         return float(node.value)
     if isinstance(node, ast.BinOp) and type(node.op) in _ALLOWED_BINOPS:
-        return _ALLOWED_BINOPS[type(node.op)](_eval(node.left), _eval(node.right))
+        bin_op = _ALLOWED_BINOPS[type(node.op)]
+        return float(bin_op(_eval(node.left), _eval(node.right)))
     if isinstance(node, ast.UnaryOp) and type(node.op) in _ALLOWED_UNARY:
-        return _ALLOWED_UNARY[type(node.op)](_eval(node.operand))
-    if isinstance(node, ast.Name) and node.id in _ALLOWED_FUNCS and isinstance(_ALLOWED_FUNCS[node.id], (int, float)):
-        return float(_ALLOWED_FUNCS[node.id])
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _ALLOWED_FUNCS:
-        fn = _ALLOWED_FUNCS[node.func.id]
+        unary_op = cast(Callable[[float], float], _ALLOWED_UNARY[type(node.op)])
+        return float(unary_op(_eval(node.operand)))
+    if isinstance(node, ast.Name) and node.id in _ALLOWED_CONSTANTS:
+        return _ALLOWED_CONSTANTS[node.id]
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _ALLOWED_FUNCTIONS:
+        fn = _ALLOWED_FUNCTIONS[node.func.id]
         return float(fn(*[_eval(arg) for arg in node.args]))
     raise ToolExecutionError("Unsupported expression")
 

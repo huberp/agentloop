@@ -15,4 +15,4 @@ class SearchInput(BaseModel):
 
 @tool_def(name="search", description="Alias for web_search", permissions="safe")
 async def search(ctx: RunContext[AgentDeps], args: SearchInput) -> str:
-    return await web_search(ctx, WebSearchInput(query=args.query, max_results=args.max_results))
+    return str(await web_search(ctx, WebSearchInput(query=args.query, max_results=args.max_results)))

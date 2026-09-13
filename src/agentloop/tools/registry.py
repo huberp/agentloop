@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import importlib.util
 import inspect
 from collections.abc import Awaitable
@@ -80,10 +81,10 @@ class ToolRegistry:
     def get(self, name: str) -> ToolDefinition | None:
         return self._definitions.get(name)
 
-    def list(self) -> list[dict[str, str]]:
+    def list(self) -> builtins.list[dict[str, str]]:
         return [{"name": item.name, "description": item.description} for item in self._definitions.values()]
 
-    def get_all(self) -> list[dict[str, str | None]]:
+    def get_all(self) -> builtins.list[dict[str, str | None]]:
         return [
             {
                 "name": item.name,
@@ -111,8 +112,8 @@ class ToolRegistry:
                     data["source"] = definition.source or source
                     self.register(ToolDefinition(**data))
 
-    def to_pydantic_ai_tools(self, prepare: ToolPrepareHook | None = None) -> list[Tool[Any]]:
-        result: list[Tool[Any]] = []
+    def to_pydantic_ai_tools(self, prepare: ToolPrepareHook | None = None) -> builtins.list[Tool[Any]]:
+        result: builtins.list[Tool[Any]] = []
         for definition in self._definitions.values():
             result.append(
                 Tool(

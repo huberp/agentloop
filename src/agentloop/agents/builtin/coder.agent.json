@@ -1,0 +1,28 @@
+{
+  "name": "coder",
+  "description": "Expert software engineer focused on writing, editing, and running code",
+  "version": "1.0.0",
+  "model": "gpt-4o",
+  "temperature": 0.2,
+  "skills": [
+    "typescript-expert"
+  ],
+  "tools": [
+    "file_read",
+    "file_write",
+    "file_edit",
+    "file_list",
+    "file_delete",
+    "code_run",
+    "code_search",
+    "shell",
+    "calculate"
+  ],
+  "maxIterations": 20,
+  "promptTemplate": "system",
+  "constraints": {
+    "requireConfirmation": [
+      "file-delete"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "test-runner",
+  "description": "Test execution agent \u2014 runs the project test suite, reports failures, and suggests targeted fixes",
+  "version": "1.0.0",
+  "temperature": 0.2,
+  "skills": [
+    "test-writer"
+  ],
+  "tools": [
+    "shell",
+    "file_read",
+    "file_write",
+    "file_edit",
+    "file_list",
+    "code_search"
+  ],
+  "maxIterations": 20,
+  "constraints": {
+    "requireConfirmation": []
+  }
+}

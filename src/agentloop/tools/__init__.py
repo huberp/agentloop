@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 BUILTIN_TOOLS_DIR = Path(__file__).parent
 
+if TYPE_CHECKING:
+    from agentloop.tools.registry import ToolRegistry
 
-async def load_builtin_tool_registry():
+
+async def load_builtin_tool_registry() -> "ToolRegistry":
     from agentloop.tools.registry import ToolRegistry
 
     registry = ToolRegistry()

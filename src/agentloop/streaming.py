@@ -14,7 +14,11 @@ async def stream_with_tools(
     history: list[ModelMessage],
     deps: AgentDeps,
 ) -> AsyncIterator[str]:
+    chunks: list[str] = []
     async with agent.run_stream(prompt, message_history=history, deps=deps) as stream:
         async for delta in stream.stream_text(delta=True):
+            chunks.append(delta)
             yield delta
+        deps.metadata["stream_usage"] = stream.usage
+        deps.metadata["stream_output"] = "".join(chunks)
     history.extend(stream.new_messages())

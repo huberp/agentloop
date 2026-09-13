@@ -18,5 +18,5 @@ class GitDiffInput(BaseModel):
 async def git_diff(ctx: RunContext[AgentDeps], args: GitDiffInput) -> str:
     repo = get_repo(ctx.deps, args.cwd)
     if args.staged:
-        return repo.git.diff("--cached", args.ref)
-    return repo.git.diff(args.ref)
+        return str(repo.git.diff("--cached", args.ref))
+    return str(repo.git.diff(args.ref))

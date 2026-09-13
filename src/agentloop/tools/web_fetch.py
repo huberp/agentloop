@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel
 from pydantic_ai import RunContext
@@ -25,7 +25,7 @@ async def web_fetch(ctx: RunContext[AgentDeps], args: WebFetchInput) -> str:
         allowed_domains=ctx.deps.settings.web_domain_allowlist or None,
         blocked_domains=ctx.deps.settings.web_domain_blocklist or None,
     )
-    result = await tool.function(args.url)
+    result = await cast(Any, tool.function)(args.url)
     if hasattr(result, "model_dump"):
         payload = result.model_dump()
     elif isinstance(result, dict):
