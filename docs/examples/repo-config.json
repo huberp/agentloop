@@ -1,21 +1,8 @@
 {
-  "llm": {
-    "activeModel": "strong"
-  },
-  "models": [
-    {
-      "id": "strong",
-      "provider": "mistral",
-      "model": "mistral-large-latest",
-      "temperature": 0.1
-    }
-  ],
-  "tools": {
-    "blocklist": ["shell"],
-    "timeoutMs": 60000
-  },
-  "execution": {
-    "sandboxMode": "docker",
-    "dockerImage": "node:22-alpine"
-  }
+  "llm_provider": "mistral",
+  "llm_model": "mistral-large-latest",
+  "llm_temperature": 0.0,
+  "max_iterations": 20,
+  "streaming_enabled": false,
+  "web_search_provider": "duckduckgo"
 }
