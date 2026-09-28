@@ -2,7 +2,7 @@
 
 ## Objective
 
-Port agent profiles (JSON → Pydantic `BaseModel`), skills (Markdown injection), and the prompt registry to Python. No PydanticAI built-in directly replaces these features; they remain as thin custom layers, simplified by Pydantic.
+Port agent profiles to Pydantic `BaseModel`, replace the custom `SkillRegistry` with **`pydantic-ai-skills`** (PyPI), and simplify the prompt registry to plain Python. No LangChain dependency remains.
 
 ---
 
@@ -12,10 +12,8 @@ Port agent profiles (JSON → Pydantic `BaseModel`), skills (Markdown injection)
 
 ```
 src/agents/
-  types.ts            AgentProfile, AgentRuntimeConfig interfaces
-  loader.ts           loadAgentProfiles() from JSON files
-  registry.ts         AgentProfileRegistry singleton
-  activator.ts        activateProfile() → AgentRuntimeConfig
+  types.ts            AgentProfile, AgentRuntimeConfig
+  loader.ts / registry.ts / activator.ts
   builtin/            *.agent.json profile files
 
 src/skills/
@@ -23,22 +21,16 @@ src/skills/
   builtin/            *.skill.md markdown files
 
 src/prompts/
-  system.ts           getSystemPrompt() — assembles system prompt
-  registry.ts         PromptRegistry — versioned templates
-  context.ts          getCachedPromptContext() — runtime context injection
+  system.ts / registry.ts / context.ts
 ```
 
-### What Changes
+### What Changes (vs. previous spec)
 
-| TypeScript | Python |
-|---|---|
-| `AgentProfile` interface | `AgentProfile(BaseModel)` |
-| `AgentRuntimeConfig` interface | `AgentRuntimeConfig(BaseModel)` |
-| `AgentProfileRegistry` (custom Map) | `AgentProfileRegistry` (thin class, same API) |
-| `SkillRegistry` (custom Map) | `SkillRegistry` (thin class, same API) |
-| `PromptRegistry` (custom Map + history) | `PromptRegistry` (simplified, no LangChain) |
-| JSON profile files | Same JSON files (parsed by Pydantic) |
-| Markdown skill files | Same Markdown files (read as plain text) |
+| Concern | Old plan | Revised (PydanticAI-first) |
+|---|---|---|
+| Agent profiles | Custom `AgentProfileRegistry` | `pydantic-settings` sub-model; `Agent(**profile.model_dump())` |
+| Skills | Custom `SkillRegistry` + markdown injection | **`pydantic-ai-skills`** package (progressive disclosure, local/remote registries) |
+| Prompt assembly | Custom `getSystemPrompt()` | Thin wrapper; skills loaded by `pydantic-ai-skills`, injected into `Agent(instructions=...)` |
 
 ---
 
@@ -47,6 +39,8 @@ src/prompts/
 ### 8.1 — Agent Profile Types (`src/agentloop/agents/types.py`)
 
 ```python
+from pydantic import BaseModel
+
 class AgentProfile(BaseModel):
     name: str
     description: str = ""
@@ -57,95 +51,108 @@ class AgentProfile(BaseModel):
     blocked_tools: list[str] | None = None
     skills: list[str] | None = None
     system_prompt_override: str | None = None
-
-class AgentRuntimeConfig(BaseModel):
-    system_prompt: str
-    model: str
-    temperature: float
-    max_iterations: int
-    tool_allowlist: list[str]
-    tool_blocklist: list[str]
-    skills: list[str]
 ```
 
 ### 8.2 — Agent Profile Registry (`src/agentloop/agents/registry.py`)
 
 ```python
 class AgentProfileRegistry:
-    async def load_from_directory(self, dir_path: Path, source: str) -> None:
-        """Load all *.agent.json files from dir_path."""
+    async def load_from_directory(self, dir_path: Path) -> None:
         for f in dir_path.glob("*.agent.json"):
             profile = AgentProfile.model_validate_json(f.read_text())
-            self._profiles[profile.name] = (profile, source)
+            self._profiles[profile.name] = profile
 
     def get(self, name: str) -> AgentProfile | None: ...
-    def list(self) -> list[dict]: ...
 ```
 
-- `AgentProfile.model_validate_json()` replaces the custom TypeScript JSON parser.
-- Existing `*.agent.json` files require no changes.
+`AgentProfile.model_validate_json()` replaces the custom TypeScript parser. Existing `*.agent.json` files need no changes.
 
-### 8.3 — Profile Activator (`src/agentloop/agents/activator.py`)
+### 8.3 — Profile → Agent Constructor
+
+Instead of a bespoke `activateProfile()` that builds a runtime config object, merge profile fields directly into `Agent()` kwargs:
 
 ```python
-def activate_profile(
-    base: AgentRuntimeConfig,
-    profile: AgentProfile,
-    skill_registry: SkillRegistry,
-) -> AgentRuntimeConfig:
-    ...
+def agent_from_profile(profile: AgentProfile, base: AgentProfile) -> Agent:
+    merged = base.model_copy(update=profile.model_dump(exclude_none=True))
+    return Agent(
+        model=merged.model or settings.llm_model,
+        instructions=merged.system_prompt_override or build_system_prompt(merged.skills),
+        tools=filtered_tools(merged.tools, merged.blocked_tools),
+        model_settings=ModelSettings(temperature=merged.temperature or settings.llm_temperature),
+    )
 ```
 
-Merges profile overrides onto the base config. Array fields (tools, skills) become deduplicated unions — identical logic to `mergeProfiles()` in `activator.ts`.
+No separate `AgentRuntimeConfig` class is needed — `Agent` kwargs serve that purpose directly.
 
-### 8.4 — Skill Registry (`src/agentloop/skills/registry.py`)
+### 8.4 — Skills via `pydantic-ai-skills`
+
+Replace the custom `SkillRegistry` with the **`pydantic-ai-skills`** package:
+
+```
+pip install pydantic-ai-skills
+```
+
+**Key capabilities:**
+- Progressive disclosure: the agent sees only a skill's name and description initially; full instructions/resources are loaded on demand.
+- Local folder source: point at `src/agentloop/skills/builtin/` (existing `*.skill.md` files are compatible).
+- Remote registries: Git and S3 sources for shared/enterprise skill libraries.
+- Sandboxed script execution for skills that include executable scripts.
+
+**Integration:**
 
 ```python
-class SkillRegistry:
-    async def load_from_directory(self, dir_path: Path, source: str) -> None:
-        for f in dir_path.glob("*.skill.md"):
-            content = f.read_text()
-            name = f.stem.replace(".skill", "")
-            self._skills[name] = (content, source)
+from pydantic_ai_skills import SkillsCapability
 
-    def get(self, name: str) -> str | None: ...
-    def list(self) -> list[dict]: ...
-    def inject_into_prompt(self, skill_names: list[str], base_prompt: str) -> str: ...
+# One capability object, shared across agents
+skills_cap = SkillsCapability('./src/agentloop/skills/builtin')
+
+agent = Agent(
+    model=...,
+    instructions=base_system_prompt,
+    capabilities=[skills_cap],  # skills injected automatically
+)
 ```
 
-- `inject_into_prompt()` appends skill Markdown blocks to the system prompt — same behaviour as the TypeScript `skillRegistry.injectSkills()`.
+The `SkillRegistry` custom class is deleted. Existing `*.skill.md` files are reused without modification.
 
-### 8.5 — System Prompt Assembly (`src/agentloop/prompts/system.py`)
+### 8.5 — Skill File Format
+
+`pydantic-ai-skills` expects a `SKILL.md` at the root of each skill folder with at minimum:
+- `# Skill Name` heading
+- `## Description` section (used for progressive-disclosure summary)
+- `## Instructions` section (loaded on demand)
+
+Existing `*.skill.md` files need a minor renaming/restructuring:
+- Move each `skill-name.skill.md` → `skills/skill-name/SKILL.md` (one folder per skill).
+- Adjust headings to match the expected format.
+
+### 8.6 — System Prompt Assembly (`src/agentloop/prompts/system.py`)
 
 ```python
-async def get_system_prompt(
-    config: AgentRuntimeConfig,
-    skill_registry: SkillRegistry,
-    runtime_context: str | None = None,
-) -> str:
-    base = _load_prompt_file(config) or _default_system_prompt()
-    prompt = skill_registry.inject_into_prompt(config.skills, base)
-    if runtime_context:
-        prompt += f"\n\n## Runtime Context\n{runtime_context}"
-    return prompt
+def build_system_prompt(skill_names: list[str] | None = None) -> str:
+    base = _load_prompt_file() or _default_system_prompt()
+    # Skills are now injected by SkillsCapability, not manually appended.
+    return base
 ```
 
-### 8.6 — Prompt Registry (`src/agentloop/prompts/registry.py`)
+The manual `inject_into_prompt()` method is removed — `SkillsCapability` handles injection.
 
-Simplified port of `PromptRegistry`:
-- Loads custom prompt templates from `settings.prompt_templates_dir`.
-- Tracks prompt usage history in a JSON file (`settings.prompt_history_file`).
-- No LangChain dependency; templates are plain Python strings with `.format(**kwargs)`.
+### 8.7 — Prompt Registry (`src/agentloop/prompts/registry.py`)
+
+Thin custom layer (no PydanticAI equivalent):
+- Loads templates from `settings.prompt_templates_dir`.
+- Template rendering: plain Python `.format(**kwargs)`.
+- No LangChain dependency.
 
 ---
 
 ## Acceptance Criteria
 
 - [ ] All builtin `*.agent.json` profiles load without error.
-- [ ] `activate_profile("coder")` returns a config with the correct tool allowlist.
-- [ ] All builtin `*.skill.md` files load without error.
-- [ ] `inject_into_prompt(["typescript-expert"], base)` returns the base prompt with the skill appended.
-- [ ] `get_system_prompt()` with skills and runtime context returns a valid prompt string.
+- [ ] `agent_from_profile("coder")` returns an `Agent` with the correct tool allowlist.
+- [ ] `SkillsCapability('./skills')` loads skill folders and the agent can reference skills by name.
+- [ ] Skills are not fully loaded into the system prompt until the agent requests them (progressive disclosure).
+- [ ] `build_system_prompt()` returns a valid base prompt string.
 
 ---
 
@@ -156,10 +163,7 @@ Simplified port of `PromptRegistry`:
 | Create | `src/agentloop/agents/__init__.py` |
 | Create | `src/agentloop/agents/types.py` |
 | Create | `src/agentloop/agents/registry.py` |
-| Create | `src/agentloop/agents/activator.py` |
-| Create | `src/agentloop/skills/__init__.py` |
-| Create | `src/agentloop/skills/registry.py` |
-| Copy | `src/skills/builtin/*.skill.md` → `src/agentloop/skills/builtin/` |
+| Restructure | `src/skills/builtin/*.skill.md` → `src/agentloop/skills/builtin/<name>/SKILL.md` |
 | Copy | `src/agents/builtin/*.agent.json` → `src/agentloop/agents/builtin/` |
 | Create | `src/agentloop/prompts/__init__.py` |
 | Create | `src/agentloop/prompts/system.py` |
@@ -167,3 +171,17 @@ Simplified port of `PromptRegistry`:
 | Create | `tests/test_agents.py` |
 | Create | `tests/test_skills.py` |
 | Delete (later) | `src/agents/*.ts`, `src/skills/registry.ts`, `src/prompts/*.ts` |
+
+---
+
+## Dependencies Added
+
+| Package | Purpose |
+|---|---|
+| `pydantic-ai-skills` | Progressive-disclosure skill system with local/remote registries |
+
+## Dependencies Removed
+
+- Custom `SkillRegistry` TypeScript implementation
+- Custom `AgentRuntimeConfig` / `activator.ts` — replaced by direct `Agent()` construction
+

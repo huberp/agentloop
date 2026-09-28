@@ -106,7 +106,12 @@ class AgentExecutor:
 
 ### 2.5 — MAX_ITERATIONS
 
-PydanticAI does not expose a direct `max_iterations` setting; the closest is `max_result_retries`. Implement a thin `prepare` hook on the agent (see Phase 4) that counts tool calls and raises `pydantic_ai.exceptions.UnexpectedModelBehavior` if the limit is exceeded. Alternatively, wrap `agent.run()` with `asyncio.wait_for()` and a wall-clock timeout derived from `settings.execution_timeout_ms`.
+PydanticAI enforces iteration limits through two complementary mechanisms:
+
+1. **`Agent(max_result_retries=N)`** — limits how many times the agent may retry producing a valid final result (applies to structured output validation retries).
+2. **`Tool.prepare` hook** (Phase 4) — increment a tool-call counter in `AgentDeps` and raise `ModelRetry("Maximum iterations reached.")` when the limit is exceeded. This is the preferred way to cap total tool-call rounds.
+
+Use a wall-clock timeout via `asyncio.wait_for()` as a safety net when `settings.execution_timeout_ms` is set.
 
 ### 2.6 — Provider Extension Point
 
