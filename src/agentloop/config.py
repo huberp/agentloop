@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic import Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, PydanticBaseSettingsSource, SettingsConfigDict
 
 from agentloop.mcp import McpServerConfig
 
@@ -45,9 +45,9 @@ class Settings(BaseSettings):
 
     tool_timeout_ms: int = 30000
     auto_approve_all: bool = False
-    tool_allowlist: list[str] = Field(default_factory=list)
-    tool_blocklist: list[str] = Field(default_factory=list)
-    shell_command_blocklist: list[str] = Field(default_factory=list)
+    tool_allowlist: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    tool_blocklist: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    shell_command_blocklist: Annotated[list[str], NoDecode] = Field(default_factory=list)
     max_concurrent_tools: int = 5
 
     workspace_root: Path = Field(default_factory=Path.cwd)
@@ -58,14 +58,14 @@ class Settings(BaseSettings):
 
     max_file_size_bytes: int = 5_000_000
     max_shell_output_bytes: int = 500_000
-    network_allowed_domains: list[str] = Field(default_factory=list)
+    network_allowed_domains: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     web_search_provider: Literal["duckduckgo", "tavily", "none"] = "duckduckgo"
     tavily_api_key: SecretStr = SecretStr("")
     duckduckgo_max_results: int = 5
 
-    web_domain_blocklist: list[str] = Field(default_factory=list)
-    web_domain_allowlist: list[str] = Field(default_factory=list)
+    web_domain_blocklist: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    web_domain_allowlist: Annotated[list[str], NoDecode] = Field(default_factory=list)
     web_allow_http: bool = False
     web_max_response_bytes: int = 2_000_000
     web_fetch_timeout_ms: int = 10000
@@ -85,7 +85,54 @@ class Settings(BaseSettings):
     ui_mode: Literal["cli", "tui"] = "cli"
     orchestrator: Literal["default"] = "default"
     plan_only: bool = False
-    mcp_servers: list[McpServerConfig] = Field(default_factory=list)
+    mcp_servers: Annotated[list[McpServerConfig], NoDecode] = Field(default_factory=list)
+
+    @staticmethod
+    def _parse_string_list(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return []
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+            return [item.strip() for item in raw.split(",") if item.strip()]
+        return [str(value).strip()] if str(value).strip() else []
+
+    @field_validator(
+        "tool_allowlist",
+        "tool_blocklist",
+        "shell_command_blocklist",
+        "network_allowed_domains",
+        "web_domain_blocklist",
+        "web_domain_allowlist",
+        mode="before",
+    )
+    @classmethod
+    def _validate_string_list_fields(cls, value: Any) -> list[str]:
+        return cls._parse_string_list(value)
+
+    @field_validator("mcp_servers", mode="before")
+    @classmethod
+    def _validate_mcp_servers(cls, value: Any) -> Any:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return []
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise ValueError("mcp_servers must be a JSON array") from exc
+        return value
 
     @classmethod
     def settings_customise_sources(

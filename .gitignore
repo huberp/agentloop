@@ -8,3 +8,5 @@ dist/
 build/
 coverage/
 traces/
+.env
+log/agentloop.log
