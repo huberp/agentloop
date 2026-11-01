@@ -34,15 +34,15 @@ class Settings(BaseSettings):
     )
 
     # ── LLM provider ──────────────────────────────────────────────────────────
-    mistral_api_key: SecretStr = SecretStr("")
-    llm_provider: str = "mistral"
-    llm_model: str = "mistral-large-latest"
-    llm_temperature: float = 0.0
-    max_iterations: int = 20
-    max_tokens_budget: int = 4000
-    max_context_tokens: int = 8000
-    llm_retry_max: int = 3
-    llm_retry_base_delay_ms: int = 200
+    mistral_api_key: SecretStr = SecretStr("")  # API key for the Mistral provider
+    llm_provider: str = "mistral"               # provider used to create the language model
+    llm_model: str = "mistral-large-latest"     # model identifier sent to the provider
+    llm_temperature: float = 0.0                # response randomness; lower values are more deterministic
+    max_iterations: int = 20                    # maximum agent/tool-call loop iterations
+    max_tokens_budget: int = 4000               # maximum total tokens consumed per invocation
+    max_context_tokens: int = 8000              # approximate token limit for retained conversation history
+    llm_retry_max: int = 3                      # maximum retries for transient LLM request failures
+    llm_retry_base_delay_ms: int = 200          # initial delay between retries, in milliseconds
 
     tool_timeout_ms: int = 30000
     auto_approve_all: bool = False
