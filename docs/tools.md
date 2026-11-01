@@ -18,3 +18,5 @@ async def my_tool(ctx: RunContext[AgentDeps], args: MyToolInput) -> str:
 ```
 
 `ToolRegistry.to_pydantic_ai_tools()` converts decorated functions into PydanticAI `Tool` objects and attaches policy metadata.
+
+Filesystem tool paths are resolved within the configured workspace. Relative paths start at the workspace root; a leading-slash path such as `/src` is treated as workspace-root-relative unless it already resolves inside the workspace. Resolved paths cannot escape the workspace.

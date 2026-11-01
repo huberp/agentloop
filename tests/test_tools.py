@@ -51,6 +51,17 @@ async def test_file_tools_round_trip(test_settings) -> None:
 
 
 @pytest.mark.asyncio
+async def test_file_list_accepts_leading_slash_workspace_path(test_settings) -> None:
+    src_dir = test_settings.workspace_root / "src"
+    src_dir.mkdir()
+    (src_dir / "module.py").write_text("pass\n")
+
+    payload = json.loads(await file_list(make_ctx(test_settings), FileListInput(path="/src")))
+
+    assert payload["entries"] == [{"path": "module.py", "type": "file", "size_bytes": 6}]
+
+
+@pytest.mark.asyncio
 async def test_calculate_returns_result(test_settings) -> None:
     ctx = make_ctx(test_settings)
     assert await calculate(ctx, CalculateInput(expression="2 + 3 * 4")) == "14"

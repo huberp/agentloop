@@ -98,6 +98,17 @@ async def test_tool_wrapper_enforces_max_iterations(test_settings) -> None:
         await tool.function(ctx, 1)
 
 
-def test_safe_path_rejects_traversal(test_settings) -> None:
+@pytest.mark.parametrize("requested", ["../outside.txt", "/../outside.txt"])
+def test_safe_path_rejects_traversal(test_settings, requested: str) -> None:
     with pytest.raises(ToolExecutionError):
-        safe_path(test_settings.workspace_root, "../outside.txt")
+        safe_path(test_settings.workspace_root, requested)
+
+
+def test_safe_path_resolves_leading_slash_from_workspace(test_settings) -> None:
+    expected = (test_settings.workspace_root / "src").resolve()
+    assert safe_path(test_settings.workspace_root, "/src") == expected
+
+
+def test_safe_path_preserves_absolute_paths_within_workspace(test_settings) -> None:
+    expected = (test_settings.workspace_root / "src").resolve()
+    assert safe_path(test_settings.workspace_root, str(expected)) == expected

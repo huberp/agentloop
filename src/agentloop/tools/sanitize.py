@@ -21,7 +21,16 @@ SHELL_INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
 def safe_path(workspace_root: Path, requested: str) -> Path:
     root = workspace_root.resolve()
     candidate = Path(requested)
-    resolved = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+    workspace_rooted = requested.startswith("/") and not requested.startswith("//")
+    if candidate.is_absolute():
+        resolved = candidate.resolve()
+        if resolved == root or root in resolved.parents:
+            return resolved
+        if not workspace_rooted:
+            raise ToolExecutionError(f"Path traversal detected: {requested}")
+    if workspace_rooted:
+        candidate = Path(requested.lstrip("/"))
+    resolved = (root / candidate).resolve()
     if root != resolved and root not in resolved.parents:
         raise ToolExecutionError(f"Path traversal detected: {requested}")
     return resolved
