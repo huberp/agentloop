@@ -33,6 +33,7 @@ class Settings(BaseSettings):
         validate_default=True,
     )
 
+    # ── LLM provider ──────────────────────────────────────────────────────────
     mistral_api_key: SecretStr = SecretStr("")
     llm_provider: str = "mistral"
     llm_model: str = "mistral-large-latest"
@@ -50,18 +51,20 @@ class Settings(BaseSettings):
     shell_command_blocklist: Annotated[list[str], NoDecode] = Field(default_factory=list)
     max_concurrent_tools: int = 5
 
+    # ── Paths ─────────────────────────────────────────────────────────────────
     workspace_root: Path = Field(default_factory=Path.cwd)
-    system_prompt_path: str = ""
-    skills_dir: str = ""
-    agent_profiles_dir: str = ""
-    prompt_templates_dir: str = ""
+    system_prompt_path: str = ""         # override default system prompt file
+    skills_dir: str = ""                 # extra skills directory (pydantic-ai-skills)
+    agent_profiles_dir: str = ""         # extra agent profiles directory
 
+    # ── Security ──────────────────────────────────────────────────────────────
     max_file_size_bytes: int = 5_000_000
     max_shell_output_bytes: int = 500_000
     network_allowed_domains: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
+    # ── Web search ────────────────────────────────────────────────────────────
     web_search_provider: Literal["duckduckgo", "tavily", "none"] = "duckduckgo"
-    tavily_api_key: SecretStr = SecretStr("")
+    tavily_api_key: SecretStr = SecretStr("")    # required when provider=tavily
     duckduckgo_max_results: int = 5
 
     web_domain_blocklist: Annotated[list[str], NoDecode] = Field(default_factory=list)
@@ -70,17 +73,18 @@ class Settings(BaseSettings):
     web_max_response_bytes: int = 2_000_000
     web_fetch_timeout_ms: int = 10000
 
-    streaming_enabled: bool = False
+    # ── Streaming ─────────────────────────────────────────────────────────────
+    streaming_enabled: bool = False   # stream tokens to CLI as they arrive
 
-    tracing_enabled: bool = False
-    trace_output_dir: str = "traces"
+    # ── Observability (Logfire / FileTracer) ──────────────────────────────────
+    tracing_enabled: bool = False             # enable FileTracer fallback
+    trace_output_dir: str = "traces"          # directory for .jsonl trace files
     tracing_cost_per_input_token_usd: float = 0.0
     tracing_cost_per_output_token_usd: float = 0.0
 
-    log_level: str = "INFO"
-    log_enabled: bool = True
+    # ── Logging ───────────────────────────────────────────────────────────────
+    log_level: str = "INFO"                          # DEBUG / INFO / WARNING / ERROR
     log_destination: Literal["stdout", "stderr"] = "stdout"
-    log_file: str = ""
 
     ui_mode: Literal["cli", "tui"] = "cli"
     orchestrator: Literal["default"] = "default"
