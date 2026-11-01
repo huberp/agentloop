@@ -1,0 +1,14 @@
+{
+  "name": "planner",
+  "description": "Strategic planning agent \u2014 breaks down goals into tasks, estimates effort, creates roadmaps",
+  "version": "1.0.0",
+  "temperature": 0.7,
+  "tools": [
+    "file_read",
+    "file_write",
+    "file_list",
+    "code_search"
+  ],
+  "maxIterations": 10,
+  "constraints": {}
+}

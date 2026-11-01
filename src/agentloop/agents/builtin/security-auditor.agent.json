@@ -1,0 +1,27 @@
+{
+  "name": "security-auditor",
+  "description": "Security specialist \u2014 audits code for OWASP Top 10 vulnerabilities and misconfigurations",
+  "version": "1.0.0",
+  "temperature": 0.1,
+  "skills": [
+    "security-auditor"
+  ],
+  "tools": [
+    "file_read",
+    "file_list",
+    "code_search",
+    "git_diff",
+    "shell"
+  ],
+  "maxIterations": 25,
+  "constraints": {
+    "requireConfirmation": [
+      "shell"
+    ],
+    "allowedDomains": [
+      "cve.mitre.org",
+      "owasp.org",
+      "nvd.nist.gov"
+    ]
+  }
+}
